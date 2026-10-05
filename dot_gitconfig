@@ -1,0 +1,60 @@
+[user]
+    name = jc
+    email = pengjiecheng156@outlook.com
+
+[init]
+    defaultBranch = main
+
+[core]
+    editor = vim
+    autocrlf = input
+    excludesfile = ~/dotfiles/gitignore_global
+
+[pull]
+    rebase = false
+
+[push]
+    default = current
+    autoSetupRemote = true
+
+[fetch]
+    prune = true
+
+[color]
+    ui = auto
+    diff = auto
+    status = auto
+    branch = auto
+
+[log]
+    date = relative
+
+[alias]
+    s = status -s
+    a = add
+    c = commit -m
+    co = checkout
+    br = branch
+    d = diff
+    p = push
+    pl = pull
+
+    l = log --oneline -20 --graph --abbrev-commit
+    ll = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
+    last = log -1 HEAD --stat
+
+    undo = reset HEAD~1 --mixed
+    amend = commit --amend --no-edit
+
+    cob = checkout -b
+    brd = branch -d
+
+    st = stash
+    stp = stash pop
+    stl = stash list
+
+[mergetool]
+    keepBackup = false
+
+[diff]
+    tool = vimdiff

@@ -1,0 +1,13 @@
+# ~/.config/mise/config.toml
+# 只放语言运行时（多版本切换）
+# CLI 工具统一交给 Homebrew 的 Brewfile
+
+[tools]
+node = "lts"
+python = "3.12"
+go = "latest"
+hunk = "0.23.0"
+
+[settings]
+auto_install = true
+asdf_compat = true

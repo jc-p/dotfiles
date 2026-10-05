@@ -1,0 +1,105 @@
+" 自动安装 vim-plug
+if empty(glob('~/.vim/autoload/plug.vim'))
+  silent !curl -fLo ~/.vim/autoload/plug.vim --create-dirs
+    \ https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+  autocmd VimEnter * PlugInstall --sync | source $MYVIMRC
+endif
+
+" ==============================================
+" 基础设置
+" ==============================================
+set nocompatible
+syntax on
+filetype plugin indent on
+
+" 显示
+set number
+set relativenumber
+set cursorline
+set showmatch
+set ruler
+set laststatus=2
+set showcmd
+set wildmenu
+
+" 搜索
+set hlsearch
+set incsearch
+set ignorecase
+set smartcase
+nnoremap <Leader>h :nohlsearch<CR>
+
+" 缩进（配置文件通用 2 空格）
+set tabstop=2
+set shiftwidth=2
+set softtabstop=2
+set expandtab
+set autoindent
+set smartindent
+
+" 编辑体验
+set backspace=indent,eol,start
+set clipboard=unnamed          " macOS 与系统剪贴板共享
+set mouse=a
+set encoding=utf-8
+set termguicolors
+set noswapfile
+set nobackup
+set noundofile
+set updatetime=300
+set scrolloff=5
+
+" 行尾空格 / Tab 可视化（配置文件排查空格问题）
+set list
+set listchars=tab:▸\ ,trail:·,extends:›,precedes:‹,nbsp:·
+
+" 换行
+set wrap
+set linebreak
+
+" Leader
+let mapleader = " "
+
+" 快捷键
+nnoremap <Leader>w :w<CR>
+nnoremap <Leader>q :q<CR>
+nnoremap <Leader>Q :q!<CR>
+nnoremap <C-h> <C-w>h
+nnoremap <C-j> <C-w>j
+nnoremap <C-k> <C-w>k
+nnoremap <C-l> <C-w>l
+
+
+
+call plug#begin('~/.vim/plugged')
+
+" 加载快照里的 commit 值（如存在）
+if filereadable(expand('~/dotfiles/plug-snapshot.vim'))
+  silent! source ~/dotfiles/plug-snapshot.vim
+endif
+
+" 插件列表
+Plug 'sainnhe/everforest'
+Plug 'vim-airline/vim-airline'
+Plug 'vim-airline/vim-airline-themes'
+Plug 'airblade/vim-gitgutter'
+Plug 'preservim/nerdcommenter'
+Plug 'jiangmiao/auto-pairs'
+
+call plug#end()
+
+
+
+
+" ==============================================
+" 主题与状态栏
+" ==============================================
+let g:everforest_background = 'hard'          " hard / medium / soft
+let g:everforest_better_performance = 1
+let g:everforest_transparent_background = 0   " 想透明就设 1
+silent! colorscheme everforest
+
+let g:airline_theme = 'everforest'
+let g:airline_powerline_fonts = 0             " 没装 Nerd Font 就设 0
+let g:airline#extensions#tabline#enabled = 1  " 顶部显示 buffer 标签
+let g:airline#extensions#tabline#formatter = 'unique_tail'
