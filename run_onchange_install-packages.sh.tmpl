@@ -1,5 +1,10 @@
 #!/bin/bash
-# 当 Brewfile 内容变化时自动执行
+
+# 下面这段只用于让脚本 hash 随 Brewfile 变化，不执行
+: <<'BREWFILE_HASH'
+{{ includeTemplate "Brewfile" }}
+BREWFILE_HASH
+
 if command -v brew &>/dev/null; then
   echo "📦 Running brew bundle..."
   brew bundle --file="{{ .chezmoi.sourceDir }}/Brewfile"
