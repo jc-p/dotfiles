@@ -74,8 +74,8 @@ nnoremap <C-l> <C-w>l
 call plug#begin('~/.vim/plugged')
 
 " 加载快照里的 commit 值（如存在）
-if filereadable(expand('~/dotfiles/plug-snapshot.vim'))
-  silent! source ~/dotfiles/plug-snapshot.vim
+if filereadable(expand('~/.vim/plug-snapshot.vim'))
+  silent! source ~/.vim/plug-snapshot.vim
 endif
 
 " 插件列表
