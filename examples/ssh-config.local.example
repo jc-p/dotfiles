@@ -1,0 +1,6 @@
+# 复制为 ~/.ssh/config.local，权限设为 600；在本机填写真实主机和密钥路径。
+# Host work
+#     HostName example.invalid
+#     User YOUR_USER
+#     IdentityFile ~/.ssh/YOUR_KEY
+# macOS 如需 Keychain，可在本机的 Host * 块中添加 UseKeychain yes。

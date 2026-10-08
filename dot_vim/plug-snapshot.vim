@@ -3,11 +3,10 @@
 " :source this file in vim to restore the snapshot
 " or execute: vim -S snapshot.vim
 
-silent! let g:plugs['auto-pairs'].commit = '39f06b873a8449af8ff6a3eee716d3da14d63a76'
-silent! let g:plugs['everforest'].commit = '85a86eb62409e3ec88713bff3d1b9d7374e112e4'
-silent! let g:plugs['nerdcommenter'].commit = 'a462bbda1e26f44fb3d3eb9d9d1c6a07aa98e665'
-silent! let g:plugs['vim-airline'].commit = 'ae24f4aca06731d5d7224df1fc5415975331b214'
-silent! let g:plugs['vim-airline-themes'].commit = '77aab8c6cf7179ddb8a05741da7e358a86b2c3ab'
-silent! let g:plugs['vim-gitgutter'].commit = '90b75207bd9b55d8ac4af15f72b4e935462014d0'
-
+let g:plugs['auto-pairs'].commit = '39f06b873a8449af8ff6a3eee716d3da14d63a76'
+let g:plugs['everforest'].commit = '85a86eb62409e3ec88713bff3d1b9d7374e112e4'
+let g:plugs['nerdcommenter'].commit = 'a462bbda1e26f44fb3d3eb9d9d1c6a07aa98e665'
+let g:plugs['vim-airline'].commit = 'ae24f4aca06731d5d7224df1fc5415975331b214'
+let g:plugs['vim-airline-themes'].commit = '77aab8c6cf7179ddb8a05741da7e358a86b2c3ab'
+let g:plugs['vim-gitgutter'].commit = '90b75207bd9b55d8ac4af15f72b4e935462014d0'
 

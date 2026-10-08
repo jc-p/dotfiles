@@ -1,11 +1,40 @@
-.DS_Store
-._*
-Thumbs.db
-*.swp
-*.swo
 *~
-.env
-.env.local
-node_modules/
-__pycache__/
-.venv/
+.DS_Store
+node_modules
+.trae
+.trae/**
+.curso/**
+.agent/**:
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Qoder
+.qoder
+.qoder/**
+
+# .claude/ shared directories - managed via skills-repo, not tracked per-project
+.claude/rules/
+.claude/skills/
+.claude/lib/
+.claude/scripts/
+
+# AI-generated docs in development projects
+doc/infra/**
+# doc/design/
+doc/precheck/
+doc/refactor/
+doc/reference/
+
+doc/design/**
+
+# Local team config
+team-config.yml
+
+# Claude/Codex local runtime state
+.claude/data/
+.claude/worktrees/
+
+**/.claude/settings.local.json

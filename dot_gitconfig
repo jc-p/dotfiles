@@ -1,60 +1,67 @@
-[user]
-    name = jc
-    email = pengjiecheng156@outlook.com
-
-[init]
-    defaultBranch = main
-
-[core]
-    editor = vim
-    autocrlf = input
-    excludesfile = ~/dotfiles/gitignore_global
-
-[pull]
-    rebase = false
-
-[push]
-    default = current
-    autoSetupRemote = true
-
-[fetch]
-    prune = true
-
-[color]
-    ui = auto
-    diff = auto
-    status = auto
-    branch = auto
-
-[log]
-    date = relative
-
 [alias]
-    s = status -s
-    a = add
-    c = commit -m
-    co = checkout
-    br = branch
-    d = diff
-    p = push
-    pl = pull
-
-    l = log --oneline -20 --graph --abbrev-commit
-    ll = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --date=relative
-    last = log -1 HEAD --stat
-
-    undo = reset HEAD~1 --mixed
-    amend = commit --amend --no-edit
-
-    cob = checkout -b
-    brd = branch -d
-
-    st = stash
-    stp = stash pop
-    stl = stash list
-
+	logs = log --pretty=format:'%C(yellow)%h%Creset - %Cgreen%an%Creset(%ar) : %s' --no-merges
+	prune-gone = !git branch -vv | grep ': gone]' | awk '{print $1}' | xargs git branch -d
+	s = status
+	co = checkout
+	cm = commit -m
+	aa = add .
+	pl = pull
+	ps = push
+	lg = log --oneline --graph --decorate
+	l = log --oneline -10
+	ba = branch -a
+	cb = checkout -b
+	brvv = branch -vv
+	unstage = reset HEAD --
+	undo = checkout --
+	soft = reset --soft HEAD^
+	rpo = remote prune origin
+	fap = fetch --all --prune
+	fo = fetch origin
+	fcp = "!f() { git fetch origin && git cherry-pick \"$@\"; }; f"
+[core]
+	pager = delta
+	quotepath = false
+	longpaths = true
+	autocrlf = input
+	trustctime = false
+	ignorecase = false
+	untrackedcache = true
+	excludesfile = ~/.gitignore_global
+[delta]
+	features = decorations line-numbers
+	side-by-side = true
+	navigate = true
+	dark = true
+[interactive]
+	difffilter = delta --color-only
+[merge]
+	conflictstyle = zdiff3
+[pull]
+	rebase = false
+	autostash = true
+[init]
+	defaultbranch = master
+[diff "text"]
+	textconv = cat
 [mergetool]
-    keepBackup = false
-
-[diff]
-    tool = vimdiff
+	keepbackup = false
+[lfs]
+	concurrenttransfers = 16
+	fetchrecentrefsdays = 0
+	pruneoffsetdays = 0
+	dialtimeout = 3
+	tlstimeout = 3
+[lfs "transfer"]
+	maxretries = 1
+	maxretrydelay = 2
+[merge "lfs-text"]
+	driver = git lfs merge-driver --ancestor %O --current %A --other %B --marker-size %L --output %A --program 'git merge-file --stdout --marker-size=%%L %%A %%O %%B >%%D'
+[rebase]
+	backend = merge
+[protocol]
+	version = 1
+[user]
+	useConfigOnly = true
+[include]
+	path = ~/.gitconfig.local

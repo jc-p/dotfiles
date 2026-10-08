@@ -1,0 +1,7 @@
+# 复制为 ~/.config/mise/conf.d/99-machine.local.toml。
+# 以下为当前 Mac 的版本选择示例，可按机器需要修改。
+[tools]
+node = "24"
+python = "3.12.0"
+rust = "stable"
+pnpm = "10"

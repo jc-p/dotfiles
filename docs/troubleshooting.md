@@ -1,25 +1,37 @@
-# Troubleshooting
+# 故障排查
 
-出问题时先翻这份。
+## 配置没有生效
 
-## 通用排查思路
+1. 用 `chezmoi source-path ~/.zshrc` 确认当前操作的是哪份源码。
+2. 只预览相关目标，例如 `chezmoi diff ~/.zshrc ~/.config/zsh`。
+3. 检查本机覆盖文件；Zsh 的环境覆盖先加载，别名和函数覆盖后加载。
+4. 执行仓库中的 `bash scripts/check.sh`，再开启新终端检查实际加载。
 
-1. **看报错信息** —— 别跳过，90% 的问题报错里写着
-2. **`chezmoi diff`** —— 检查是否 chezmoi 没 apply
-3. **`which -a 命令`** —— 看命令从哪来、有几个
-4. **`echo $PATH | tr ':' '\n'`** —— 看 PATH 顺序
-5. **新开终端** —— 排除当前 shell 的临时状态
+## 插件或工具缺失
 
-## chezmoi 相关
+- 配置同步不安装软件。先审阅 Brewfile，再显式运行 `bash scripts/bootstrap.sh`。
+- Oh My Zsh 缺失时通用配置仍可用；Zsh 两个插件使用 Homebrew 安装路径。
+- 用 `command -v 工具名` 检查命令来源；本机 PATH 放入 `env.local.zsh`。
+- mise 不自动下载。用 `mise config ls`、`mise ls --current` 查看加载文件和版本，再按需运行 `mise install`。
+- 本机工具版本放入 `conf.d/99-machine.local.toml`；不要把工具写回优先级更高的主 `config.toml`。
 
-### `chezmoi apply` 后没生效
+## Git 身份或 SSH 配置
 
-```bash
-# 看差异
-chezmoi diff
+- Git 开启 `useConfigOnly`，提交前在 `~/.gitconfig.local` 填写真实身份，替换示例占位值。
+- SSH 主机、密钥路径及 macOS Keychain 选项放入 `~/.ssh/config.local`，权限设为 600。
+- `ssh -G -F ~/.ssh/config example.invalid >/dev/null` 可检查配置解析，不建立连接。
+- chezmoi 的 `private_` 只控制权限；私有数据不能因此进入公开仓库。
 
-# 强制重新应用
-chezmoi apply -v
+## 搜索与替换
 
-# 如果还不行，检查源文件是否存在
-chezmoi source-path ~/.zshrc
+- 内容搜索改名为 `fsearch`；`fg` 保留 Shell 内置作业控制含义。
+- `fsearch`、`rgv` 的行号解析暂不支持路径中含冒号的文件，遇到此类路径请直接使用 rg/编辑器。
+- `replace 旧 新 [文件或目录...]` 执行字面替换，默认遵守 rg 的忽略规则，不搜索隐藏文件。
+- 替换前预览全部差异；取消或预览后文件变化都不会开始写入。旧字符串必须非空且为单行，文件必须为 UTF-8 文本，不接受符号链接。
+- 确认后的写入按单个文件原子完成；多文件不是整体事务，出现 IO 错误需检查是否已有文件完成。
+
+## Vim 与恢复
+
+- Vim 启动不下载插件；缺少 vim-plug 时按照 README 显式安装。
+- 快照赋值错误不再静默忽略；确认快照插件名与 `Plug` 声明一致。
+- 回退时恢复 README 中的本机备份；应用新建的文件需要另外核对。

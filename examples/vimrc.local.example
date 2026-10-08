@@ -1,0 +1,2 @@
+" 复制为 ~/.vimrc.local；用于本机 Vim 选项和按键差异。
+" set clipboard=unnamedplus

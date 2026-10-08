@@ -1,0 +1,22 @@
+# 源码、说明、示例和安装脚本仅留在仓库中。
+README.md
+docs
+docs/**
+examples
+examples/**
+scripts
+scripts/**
+Brewfile
+Brewfile.optional
+.gitignore
+
+# 这些家目录文件由各机器维护，chezmoi 不添加或应用它们。
+.config/zsh/*.local.zsh
+.config/zsh/local.zsh
+.gitconfig.local
+.ssh/config.local
+# SSH 仅管理通用 config，密钥、主机历史及其他本机文件全部排除。
+.ssh/*
+!.ssh/config
+.config/mise/conf.d/*.local.toml
+.vimrc.local

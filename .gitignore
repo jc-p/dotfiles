@@ -1,0 +1,16 @@
+# 本机配置即使误放入源码目录，也不应进入提交。
+*.local.zsh
+/dot_config/zsh/local.zsh
+*.local.toml
+*.local
+dot_gitconfig.local
+dot_vimrc.local
+private_dot_gitconfig.local
+private_dot_ssh/*config.local
+/private_dot_ssh/*
+!/private_dot_ssh/private_config
+/dot_ssh/
+.env
+.env.*
+.DS_Store
+__pycache__/

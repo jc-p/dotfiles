@@ -1,0 +1,6 @@
+# 通用运行时默认值；本机精确版本在 99-machine.local.toml。
+[tools]
+node = "24"
+python = "3.12"
+rust = "stable"
+pnpm = "10"

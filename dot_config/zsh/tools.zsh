@@ -17,8 +17,21 @@ if command -v mise &>/dev/null; then
 fi
 
 # fzf
-if command -v fzf &>/dev/null; then
+# fzf: fast file/history search. Prefer fd when available.
+if command -v fd >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git --exclude node_modules --exclude dist --exclude build --exclude coverage --exclude .qoder'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git --exclude node_modules --exclude dist --exclude build --exclude coverage --exclude .qoder'
+elif command -v rg >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='rg --files --hidden --follow -g "!.git" -g "!node_modules" -g "!dist" -g "!build" -g "!coverage" -g "!.qoder"'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+fi
+export FZF_DEFAULT_OPTS='--height 45% --layout=reverse --border --info=inline --cycle'
+if command -v bat >/dev/null 2>&1; then
+  export FZF_CTRL_T_OPTS='--preview "bat --style=numbers --color=always --line-range=:200 {}" --preview-window=right:60%,border-left'
+else
+  export FZF_CTRL_T_OPTS='--preview "sed -n '\''1,200p'\'' {}" --preview-window=right:60%,border-left'
+fi
+if [[ -o interactive && -t 0 ]] && command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
-  export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
-  export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
 fi

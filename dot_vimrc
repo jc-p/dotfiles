@@ -1,105 +1,204 @@
-" 自动安装 vim-plug
-if empty(glob('~/.vim/autoload/plug.vim'))
-  silent !curl -fLo ~/.vim/autoload/plug.vim --create-dirs
-    \ https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-  autocmd VimEnter * PlugInstall --sync | source $MYVIMRC
+" 通用配置保留当前编辑行为；启动时不安装插件。
+if filereadable(expand("~/.vim/autoload/plug.vim"))
+  call plug#begin("~/.vim/plugged")
+  Plug 'sainnhe/everforest'
+  Plug 'vim-airline/vim-airline'
+  Plug 'vim-airline/vim-airline-themes'
+  Plug 'airblade/vim-gitgutter'
+  Plug 'preservim/nerdcommenter'
+  Plug 'jiangmiao/auto-pairs'
+  Plug 'junegunn/fzf'
+  Plug 'junegunn/fzf.vim'
+  Plug 'tpope/vim-surround'
+  Plug 'tpope/vim-commentary'
+  Plug 'ghifarit53/tokyonight-vim'
+  Plug 'itchyny/lightline.vim'
+
+  " 注册完成后才应用快照；缺失插件不触发下载。
+  if filereadable(expand("~/.vim/plug-snapshot.vim"))
+    source ~/.vim/plug-snapshot.vim
+  endif
+  call plug#end()
 endif
 
-" ==============================================
-" 基础设置
-" ==============================================
-set nocompatible
-syntax on
-filetype plugin indent on
+"  [2] 主题与视觉呈现
+" ======================
+set termguicolors           " 启用真彩色
+if !empty(globpath(&runtimepath, "colors/tokyonight.vim"))
+  colorscheme tokyonight
+endif         " 主色彩方案
+set background=dark         " 暗色模式
+let g:gruvbox_contrast_dark = 'soft'  " 柔化对比度
 
-" 显示
-set number
-set relativenumber
-set cursorline
-set showmatch
-set ruler
-set laststatus=2
-set showcmd
-set wildmenu
-
-" 搜索
-set hlsearch
-set incsearch
-set ignorecase
-set smartcase
-nnoremap <Leader>h :nohlsearch<CR>
-
-" 缩进（配置文件通用 2 空格）
-set tabstop=2
-set shiftwidth=2
-set softtabstop=2
-set expandtab
-set autoindent
-set smartindent
-
-" 编辑体验
-set backspace=indent,eol,start
-set clipboard=unnamed          " macOS 与系统剪贴板共享
-set mouse=a
-set encoding=utf-8
-set termguicolors
-set noswapfile
-set nobackup
-set noundofile
-set updatetime=300
-set scrolloff=5
-
-" 行尾空格 / Tab 可视化（配置文件排查空格问题）
-set list
-set listchars=tab:▸\ ,trail:·,extends:›,precedes:‹,nbsp:·
-
-" 换行
-set wrap
-set linebreak
-
-" Leader
-let mapleader = " "
-
-" 快捷键
-nnoremap <Leader>w :w<CR>
-nnoremap <Leader>q :q<CR>
-nnoremap <Leader>Q :q!<CR>
-nnoremap <C-h> <C-w>h
-nnoremap <C-j> <C-w>j
-nnoremap <C-k> <C-w>k
-nnoremap <C-l> <C-w>l
-
-
-
-call plug#begin('~/.vim/plugged')
-
-" 加载快照里的 commit 值（如存在）
-if filereadable(expand('~/.vim/plug-snapshot.vim'))
-  silent! source ~/.vim/plug-snapshot.vim
-endif
-
-" 插件列表
-Plug 'sainnhe/everforest'
-Plug 'vim-airline/vim-airline'
-Plug 'vim-airline/vim-airline-themes'
-Plug 'airblade/vim-gitgutter'
-Plug 'preservim/nerdcommenter'
-Plug 'jiangmiao/auto-pairs'
-
-call plug#end()
-
-
-
-
-" ==============================================
-" 主题与状态栏
-" ==============================================
-let g:everforest_background = 'hard'          " hard / medium / soft
-let g:everforest_better_performance = 1
-let g:everforest_transparent_background = 0   " 想透明就设 1
-silent! colorscheme everforest
-
-let g:airline_theme = 'everforest'
-let g:airline_powerline_fonts = 0             " 没装 Nerd Font 就设 0
-let g:airline#extensions#tabline#enabled = 1  " 顶部显示 buffer 标签
+" » 状态栏定制
+let g:airline#extensions#tabline#enabled = 1
 let g:airline#extensions#tabline#formatter = 'unique_tail'
+let g:airline_theme = 'bubblegum'       " 状态栏主题同步
+let g:airline_powerline_fonts = 1     " 启用 Powerline 符号
+
+" » 语法高亮增强
+syntax enable
+highlight Normal guibg=#1a1a1a       " 自定义背景色
+
+
+"  [3] 编辑器核心行为
+" ======================
+" ▶ 基础参数
+set nocompatible
+filetype plugin indent on
+set mouse=a                         " 全模式鼠标支持
+set autoread                        " 外部修改自动重载
+
+" ▶ 文本呈现
+set number relativenumber           " 混合行号
+set cursorline                      " 高亮当前行
+set scrolloff=5                     " 垂直滚动边距
+set wrap linebreak                  " 智能换行
+
+" ▶ 搜索优化
+set hlsearch incsearch              " 高亮与增量搜索
+set ignorecase smartcase            " 智能大小写
+
+" ▶ 缩进策略
+set expandtab                       " 空格替代 Tab
+set tabstop=2 softtabstop=2         " Tab 视觉宽度
+set shiftwidth=2                    " 自动缩进量
+set autoindent smartindent          " 智能缩进
+
+" ▶ 文件处理
+set encoding=utf-8                  " UTF-8 编码
+set fileformat=unix                 " 换行符风格
+set nobackup noswapfile             " 禁用临时文件
+
+
+"  [4] 快捷键体系
+" ======================
+let mapleader = " "                 " 全局 Leader 键
+let maplocalleader = ","            " 局部 Leader 键
+
+
+" » 模式切换优化
+inoremap jk <Esc>                   " 闪电退出插入模式
+nnoremap ; :
+
+" » 文件操作
+nnoremap <Leader>w :w<CR>           " 快速保存
+nnoremap <Leader>q :q<CR>           " 退出编辑器
+nnoremap <Leader>x :x<CR>           " 保存并退出
+
+" » 窗口导航
+nnoremap <C-h> <C-w>h               " ← 左窗口
+nnoremap <C-j> <C-w>j               " ↓ 下窗口
+nnoremap <C-k> <C-w>k               " ↑ 上窗口
+nnoremap <C-l> <C-w>l               " → 右窗口
+
+" » 搜索控制
+nnoremap <silent> <Leader>/ :nohlsearch<CR>  " 清除高亮
+nnoremap n nzzzv                    " 结果居中+视觉保持
+nnoremap N Nzzzv
+
+" » 插件快捷键
+" 快捷搜索 fzf
+nnoremap <Leader>f :Files<CR>
+" 缓冲区切换
+nnoremap <Leader>b :Buffers<CR>
+" 全局搜索
+nnoremap <Leader>g :Rg<CR>
+nnoremap <Leader>m :Marks<CR>
+
+" » 代码操作
+" 行注释
+nmap <Leader>c gcc
+" 块注释
+vmap <Leader>c gc
+
+" 快速跳转并居中
+nnoremap ' `
+nnoremap ` '
+nnoremap <silent> mA mAzz    " 设置标记后自动居中
+nnoremap <silent> `A `Azz    " 跳转标记后居中
+
+" 高亮当前行/列
+set cursorline
+highlight CursorLine cterm=NONE ctermbg=235 guibg=#2c2d2e
+
+" 自动清理无效标记
+autocmd BufReadPost * silent! delmarks!
+
+"  [5] 插件深度配置
+" ======================
+" ▶ coc.nvim (LSP)
+nmap <silent> gd <Plug>(coc-definition)
+nmap <silent> gy <Plug>(coc-type-definition)
+nmap <silent> gr <Plug>(coc-references)
+nmap <silent> gi <Plug>(coc-implementation)
+inoremap <expr> <Tab> pumvisible() ? "\<C-n>" : "\<Tab>"
+inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
+inoremap <expr> <C-j> getline('.')[col('.')-1] =~ '["'."'".'\])}>]' ? "\<Right>" : "\<C-o>l"
+"  [6] 高级功能
+" ======================
+" ▶ 自动命令
+augroup AutoClean
+  autocmd!
+  autocmd BufWritePre * %s/\s\+$//e " 保存时清除行尾空格
+augroup END
+
+" ▶ 性能优化
+set ttimeoutlen=50                  " 键序列响应速度
+set nolazyredraw                      " 宏执行时延迟渲染
+
+" ▶ 调试辅助
+command! Reload source $MYVIMRC      " 快速重载配置
+
+" ======================
+" [7] 增强基础功能
+" ======================
+" ▶ 撤销系统
+set undofile
+set undodir=~/.vim/undo//
+set undolevels=1000
+set undoreload=10000
+
+" ▶ 剪贴板集成
+if has('mac')
+    set clipboard=unnamed
+elseif has('unix')
+    set clipboard=unnamedplus
+endif
+
+" ▶ 智能补全
+set wildmenu
+set wildmode=longest:full,full
+set wildignorecase
+set wildignore=*.o,*.obj,*.pyc,*.class,*.dll,*.exe
+
+" ▶ 终端优化
+set t_Co=256
+set t_ut=
+set ttyfast
+
+" ▶ 文件类型规则
+autocmd FileType markdown setlocal wrap linebreak
+autocmd FileType python setlocal tabstop=4 shiftwidth=4
+autocmd FileType json setlocal commentstring=//\ %s
+
+" ▶ 代码折叠
+set foldmethod=indent
+set foldlevelstart=99
+set foldnestmax=3
+nnoremap <Leader>z za
+
+" ▶ 错误提示
+highlight Error guifg=#ff5555 ctermfg=Red
+highlight WarningMsg guifg=#ffb86c ctermfg=Yellow
+
+" ▶ 其他增强
+set guicursor=a:blinkon0           " 禁用光标闪烁
+set formatoptions+=mM              " 中文排版
+set splitbelow splitright          " 自然窗口分割
+highlight CursorLine cterm=NONE ctermbg=235 guibg=#2c2d2e
+
+" 本机覆盖最后加载。
+if filereadable(expand("~/.vimrc.local"))
+  source ~/.vimrc.local
+endif

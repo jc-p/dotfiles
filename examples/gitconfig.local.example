@@ -1,0 +1,4 @@
+# 复制为 ~/.gitconfig.local，填写实际身份；可追加本机凭据助手。
+[user]
+    name = YOUR_NAME
+    email = YOUR_EMAIL

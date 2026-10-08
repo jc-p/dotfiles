@@ -1,0 +1,2 @@
+# 复制为 ~/.config/zsh/local.zsh；此文件在通用别名和函数后加载。
+# alias work='cd "$HOME/your-workspace"'

@@ -4,18 +4,23 @@
 
 # --- 文件查看 ---
 if command -v eza &>/dev/null; then
-  alias ls='eza --icons --group-directories-first'
-  alias ll='eza -lah --icons --group-directories-first --git'
-  alias la='eza -lah --icons --group-directories-first'
+  alias ls='eza --icons'
+  alias ll='eza --icons -l'
+  alias la='eza --icons -la'
+  alias tree='eza --icons --tree'
   alias lt='eza --tree --level=2 --icons'
 else
-  alias ls='ls --color=auto'
+  if [[ "$OSTYPE" == darwin* ]]; then
+    alias ls='ls -G'
+  else
+    alias ls='ls --color=auto'
+  fi
   alias ll='ls -lah'
   alias la='ls -A'
 fi
 
 if command -v bat &>/dev/null; then
-  alias cat='bat --style=plain --pager=never'
+  alias cat='bat'
 fi
 
 # --- 基础 ---
@@ -26,32 +31,27 @@ alias df='df -h'
 alias ports='lsof -i -P -n | grep LISTEN'
 alias ..='cd ..'
 alias ...='cd ../..'
-alias vzsh='vim ~/.zshrc'          # 主入口
-alias vza='vim ~/dotfiles/zsh/aliases.zsh'    # 别名
-alias vzf='vim ~/dotfiles/zsh/functions.zsh'  # 函数
+alias vzsh='chezmoi edit ~/.zshrc'
+alias vza='chezmoi edit ~/.config/zsh/aliases.zsh'
+alias vzf='chezmoi edit ~/.config/zsh/functions.zsh'
 
-# --- ripgrep 默认参数 ---
-if command -v rg &>/dev/null; then
-  alias rg='rg --smart-case --hidden --glob "!.git"'
-fi
-
-# --- Git ---
-alias g='git'
-alias gs='git status -sb'
-alias ga='git add'
-alias gaa='git add --all'
-alias gc='git commit -m'
-alias gca='git commit --amend --no-edit'
-alias gco='git checkout'
-alias gcb='git checkout -b'
-alias gb='git branch'
-alias gd='git diff'
-alias gl='git log --oneline --graph --decorate --all'
-alias gp='git push'
-alias gpl='git pull'
-alias gf='git fetch --all --prune'
-alias gst='git stash'
-alias gstp='git stash pop'
+# --- Git：保留已有插件缩写，只提供缺失项 ---
+(( $+aliases[g] )) || alias g='git'
+(( $+aliases[gs] )) || alias gs='git status -sb'
+(( $+aliases[ga] )) || alias ga='git add'
+(( $+aliases[gaa] )) || alias gaa='git add --all'
+(( $+aliases[gc] )) || alias gc='git commit -m'
+(( $+aliases[gca] )) || alias gca='git commit --amend --no-edit'
+(( $+aliases[gco] )) || alias gco='git checkout'
+(( $+aliases[gcb] )) || alias gcb='git checkout -b'
+(( $+aliases[gb] )) || alias gb='git branch'
+(( $+aliases[gd] )) || alias gd='git diff'
+(( $+aliases[gl] )) || alias gl='git log --oneline --graph --decorate --all'
+(( $+aliases[gp] )) || alias gp='git push'
+(( $+aliases[gpl] )) || alias gpl='git pull'
+(( $+aliases[gf] )) || alias gf='git fetch --all --prune'
+(( $+aliases[gst] )) || alias gst='git stash'
+(( $+aliases[gstp] )) || alias gstp='git stash pop'
 
 # --- lazygit ---
 if command -v lazygit &>/dev/null; then
@@ -62,9 +62,46 @@ fi
 if command -v brew &>/dev/null; then
   alias brewup='brew update && brew upgrade && brew cleanup'
   alias bi='brew install'
-  alias bu='brew uninstall'
+  (( $+aliases[bu] )) || alias bu='brew uninstall'
   alias bs='brew search'
   alias bl='brew list'
-  alias bup='brew update && brew upgrade'
+  (( $+aliases[bup] )) || alias bup='brew update && brew upgrade'
   alias bcu='brew cleanup'
 fi
+
+# 从现有配置迁入的通用快捷方式。
+alias cls='clear'
+alias szsh='source ~/.zshrc'
+alias vprofile='vim ~/.zprofile'
+alias vzshenv='vim ~/.zshenv'
+alias vhosts='sudo vim /etc/hosts'
+
+alias f='fzf'
+alias lg='lazygit'
+alias md='markitdown'
+alias cs='cht.sh'
+alias rgf='rg --files'
+alias rgl='rg -l'
+alias rgt='rg -t'
+alias rge='rg -g'
+alias rgc='rg -n -C 3'
+alias rgtx='rg -t ts -t tsx'
+alias rgj='rg -t js -t jsx -t ts -t tsx'
+if command -v delta >/dev/null 2>&1; then
+  alias gd='git diff'
+  alias gdc='git diff --cached'
+  alias gds='git diff --stat'
+fi
+alias ..='cd ..'
+alias ...='cd ../..'
+alias d='dirs -v'
+alias cpath='pwd | pbcopy'
+alias pyrun='python3'
+alias nv='nvim'
+alias nvd='neovide --frame=none --maximized'
+
+alias gbc='git branch --show-current | pbcopy'
+# Verbose file ops
+alias cp='cp -v'
+alias mv='mv -v'
+alias rm='rm -v'
