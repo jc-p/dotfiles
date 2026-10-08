@@ -14,6 +14,10 @@
 - 用 `command -v 工具名` 检查命令来源；本机 PATH 放入 `env.local.zsh`。
 - mise 不自动下载。用 `mise config ls`、`mise ls --current` 查看加载文件和版本，再按需运行 `mise install`。
 - 本机工具版本放入 `conf.d/99-machine.local.toml`；不要把工具写回优先级更高的主 `config.toml`。
+- 用 `zsh -li scripts/verify.zsh` 检查首条命令的实际版本是否与 mise 一致；不依赖尚未执行的提示符 hook。
+- 不复制旧机器的 mise/pyenv/Cargo 安装目录。运行时 symlink 指向旧目录时，新机需重新安装。
+- `gc/gl/gst/gca` 有固定通用含义；若验收失败，检查本机 `local.zsh` 是否主动覆盖了它们。
+- Python 版本过旧时先运行安装脚本；检查脚本本身不会下载运行时。
 
 ## Git 身份或 SSH 配置
 
@@ -34,4 +38,5 @@
 
 - Vim 启动不下载插件；缺少 vim-plug 时按照 README 显式安装。
 - 快照赋值错误不再静默忽略；确认快照插件名与 `Plug` 声明一致。
+- 保留的主题为 everforest、状态栏为 airline、注释为 NERDCommenter；`空格+c` 调用注释切换，失配的 Coc 映射已移除。
 - 回退时恢复 README 中的本机备份；应用新建的文件需要另外核对。

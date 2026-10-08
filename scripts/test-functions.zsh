@@ -40,4 +40,6 @@ alias gst='git status'
 source "${0:A:h:h}/dot_config/zsh/aliases.zsh"
 [[ "${aliases[gc]}" == 'git commit --verbose' ]]
 [[ "${aliases[gst]}" == 'git status' ]]
-print 'Zsh 行为检查通过：fg、多选 PID、取消、历史填入、EDITOR、ff、已有 Git 缩写'
+[[ "${aliases[gl]}" == 'git pull' ]]
+[[ "${aliases[gca]}" == 'git commit --verbose --all' ]]
+print 'Zsh 行为检查通过：fg、多选 PID、取消、历史填入、EDITOR、ff、固定 Git 缩写'

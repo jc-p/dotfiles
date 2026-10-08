@@ -2,5 +2,4 @@
 [tools]
 node = "24"
 python = "3.12"
-rust = "stable"
 pnpm = "10"

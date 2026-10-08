@@ -26,5 +26,5 @@ path=(
 
 # 通用工具偏好，允许本机 env.local.zsh 覆盖。
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+export RIPGREP_CONFIG_PATH="${RIPGREP_CONFIG_PATH:-$HOME/.ripgreprc}"
 export TLDR_LANGUAGE="zh"
-export TLDR_CHAE_ENABLED=1

@@ -30,6 +30,12 @@ source "$HOME/.config/zsh/functions.zsh"
 # 7. 本机别名和函数最后覆盖通用默认值。
 [[ -r "$HOME/.config/zsh/local.zsh" ]] && source "$HOME/.config/zsh/local.zsh"
 
+# 本机 PATH 接线完成后才激活原生 shims，避免执行前 hook 再次抢占 PATH。
+# 项目运行时仍由 mise.toml 选择；项目环境变量用 mise exec 显式加载。
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh --shims)"
+fi
+
 # 语法高亮需在全部 widgets/函数定义后加载。
 if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
   ZSH_AUTOSUGGEST_STRATEGY=(${ZSH_AUTOSUGGEST_STRATEGY:-history})

@@ -1,0 +1,7 @@
+# 按需复制为 ~/.config/mise/conf.d/99-work.local.toml，禁止覆盖已有本机文件。
+# 当前工作环境使用 Java 8 / Maven 3.6.3；新机安装与项目兼容性需实机验证。
+# java 的 major 选择不固定补丁版本，需要精确复现时填入已确认完整版本。
+[tools]
+java = "zulu-8"
+maven = "3.6.3"
+# rust = "stable"

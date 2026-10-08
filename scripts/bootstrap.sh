@@ -23,6 +23,19 @@ fi
 
 source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 brew bundle --file="$source_dir/Brewfile"
+# 固定使用刚安装的 Homebrew mise，避免旧 ~/.local/bin/mise 抢占。
+mise_bin="$(brew --prefix mise)/bin/mise"
+if [[ ! -x "$mise_bin" ]]; then
+  printf 'Homebrew mise 不可执行: %s\n' "$mise_bin" >&2
+  exit 1
+fi
+# 安装源目录声明的核心版本，初始化阶段不依赖已应用的家目录配置。
+(
+  cd "$source_dir"
+  MISE_CONFIG_DIR="$source_dir/dot_config/mise" "$mise_bin" install
+  "$mise_bin" reshim
+)
 if [[ "$include_optional" == true ]]; then
   brew bundle --file="$source_dir/Brewfile.optional"
 fi
+printf '核心工具已准备；运行 bash scripts/check.sh，再备份、预览并应用配置。\n'

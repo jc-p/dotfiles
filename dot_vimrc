@@ -10,9 +10,6 @@ if filereadable(expand("~/.vim/autoload/plug.vim"))
   Plug 'junegunn/fzf'
   Plug 'junegunn/fzf.vim'
   Plug 'tpope/vim-surround'
-  Plug 'tpope/vim-commentary'
-  Plug 'ghifarit53/tokyonight-vim'
-  Plug 'itchyny/lightline.vim'
 
   " 注册完成后才应用快照；缺失插件不触发下载。
   if filereadable(expand("~/.vim/plug-snapshot.vim"))
@@ -24,11 +21,10 @@ endif
 "  [2] 主题与视觉呈现
 " ======================
 set termguicolors           " 启用真彩色
-if !empty(globpath(&runtimepath, "colors/tokyonight.vim"))
-  colorscheme tokyonight
+if !empty(globpath(&runtimepath, "colors/everforest.vim"))
+  colorscheme everforest
 endif         " 主色彩方案
 set background=dark         " 暗色模式
-let g:gruvbox_contrast_dark = 'soft'  " 柔化对比度
 
 " » 状态栏定制
 let g:airline#extensions#tabline#enabled = 1
@@ -108,9 +104,9 @@ nnoremap <Leader>m :Marks<CR>
 
 " » 代码操作
 " 行注释
-nmap <Leader>c gcc
+nmap <Leader>c <Plug>NERDCommenterToggle
 " 块注释
-vmap <Leader>c gc
+vmap <Leader>c <Plug>NERDCommenterToggle
 
 " 快速跳转并居中
 nnoremap ' `
@@ -127,11 +123,7 @@ autocmd BufReadPost * silent! delmarks!
 
 "  [5] 插件深度配置
 " ======================
-" ▶ coc.nvim (LSP)
-nmap <silent> gd <Plug>(coc-definition)
-nmap <silent> gy <Plug>(coc-type-definition)
-nmap <silent> gr <Plug>(coc-references)
-nmap <silent> gi <Plug>(coc-implementation)
+" ▶ 基础插入模式补全，不依赖未安装的 LSP 插件。
 inoremap <expr> <Tab> pumvisible() ? "\<C-n>" : "\<Tab>"
 inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
 inoremap <expr> <C-j> getline('.')[col('.')-1] =~ '["'."'".'\])}>]' ? "\<Right>" : "\<C-o>l"

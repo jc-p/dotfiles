@@ -101,7 +101,8 @@ class ConfigTests(unittest.TestCase):
             script += f"let g:plugs['{plugin.split('/')[-1]}'] = {{}}\n"
         script += "source " + str(REPOSITORY / "dot_vim/plug-snapshot.vim") + "\n"
         script += f"call assert_equal({len(plugins)}, len(g:plugs))\n"
-        script += "let pinned = 0\nfor plug in values(g:plugs)\nif has_key(plug, 'commit')\ncall assert_match('^[0-9a-f]\\{40}$', plug.commit)\nlet pinned += 1\nendif\nendfor\ncall assert_equal(6, pinned)\n"
+        script += "let pinned = 0\nfor plug in values(g:plugs)\nif has_key(plug, 'commit')\ncall assert_match('^[0-9a-f]\\{40}$', plug.commit)\nlet pinned += 1\nendif\nendfor\n"
+        script += f"call assert_equal({len(plugins)}, pinned)\n"
         script += "if !empty(v:errors)\ncquit\nendif\nqa!\n"
         fixture = self.root / "snapshot-test.vim"
         fixture.write_text(script)
@@ -133,8 +134,9 @@ class ConfigTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         tools = json.loads(result.stdout)
-        for tool, version in [("node", "24"), ("python", "3.12.0"), ("rust", "stable"), ("pnpm", "10")]:
+        for tool, version in [("node", "24"), ("python", "3.12"), ("pnpm", "10")]:
             self.assertEqual(tools[tool][0]["requested_version"], version)
+        self.assertNotIn("rust", tools)
 
     def test_readme_shell_examples_parse(self) -> None:
         for path in [REPOSITORY / "README.md", *REPOSITORY.joinpath("docs").glob("*.md")]:

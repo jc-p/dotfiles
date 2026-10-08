@@ -1,0 +1,6 @@
+# 通用搜索习惯；replace 使用 --no-config，不受这些选项影响。
+--hidden
+--smart-case
+--max-columns=150
+--max-columns-preview
+--glob=!.git/*

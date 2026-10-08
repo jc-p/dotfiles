@@ -1,17 +1,13 @@
 # 按需编辑后，通过 scripts/bootstrap.sh --optional 显式安装。
 brew "lazygit"
 brew "gh"
-brew "wget"
-brew "curl"
-brew "tree"
 brew "tmux"
-brew "coreutils"
-brew "gnu-sed"
-brew "grep"
-brew "git-delta"  # Homebrew 的包名为 git-delta，命令名为 delta。
+brew "neovim"  # 使用 nv 时启用；其配置需另行筛选。
+brew "yazi"  # 使用 y 时启用。
+brew "subversion"  # 工作项目使用 SVN 时启用。
+brew "git-lfs"  # 项目使用 LFS 时启用，并在本机配置过滤器。
 brew "tldr"
 brew "zsh-you-should-use"  # 已安装时按原顺序加载，不作为必需依赖。
 
-if OS.mac?
-  cask "font-hack-nerd-font"
-end
+# curl/grep/sed 使用 macOS 自带版本；tree 已由 eza 提供。
+# GNU 工具、第二套终端/字体、容器、服务和专项工具按项目单独安装。

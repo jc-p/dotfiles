@@ -56,7 +56,7 @@
 
 ## Git
 
-已有 Oh My Zsh 插件缩写优先保留；通用配置只补缺失项。`gc`、`gl`、`gst` 等含义以 `alias 命令名` 的实际定义为准，下列操作使用明确的 Git 命令避免混淆。
+`gc` 是 `git commit --verbose`，`gca` 是 `git commit --verbose --all`，`gl` 是 `git pull`，`gst` 是 `git status`；不依赖 Oh My Zsh。其他已有缩写优先保留，本机可在 `local.zsh` 覆盖。
 
 | 场景 | 命令 |
 |---|---|
