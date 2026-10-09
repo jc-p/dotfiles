@@ -1,0 +1,11 @@
+# 精选速查页由 dotfiles 管理；直接使用 cheat 编辑时先修改源码，再应用。
+editor: vim
+colorize: true
+style: monokai
+formatter: terminal256
+pager: less -FRX
+cheatpaths:
+  - name: common
+    path: {{ printf "%s/.config/cheat/cheatsheets/common" .chezmoi.destDir | quote }}
+    tags: [common]
+    readonly: true

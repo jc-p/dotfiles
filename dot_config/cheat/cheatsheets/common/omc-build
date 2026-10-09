@@ -1,0 +1,15 @@
+# 编译、打补丁：在实际 OMC 项目根目录使用，先准备 Java/Maven
+# 查看模块列表和帮助
+omc-build help
+
+# 编译模块：先查参数；实际编译会生成产物
+omc-build build --help
+
+# 打补丁 / 打包交付：先查模块和交付目录参数，实际执行会生成产物
+omc-build patch --help
+
+# 提取依赖：先查模块和筛选参数，实际执行会生成文件
+omc-build deps --help
+
+# 查看 JDK 选择和全部命令
+omc-build --help

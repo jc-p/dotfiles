@@ -1,0 +1,26 @@
+# Git 差异：选择工作区变更文件并查看
+gx diff
+
+# Git 差异：选择暂存区变更文件并查看
+gx diff --cached
+
+# 编辑变更文件：选择后打开编辑器
+gx diff --edit
+
+# 查看提交：选择提交后展示内容
+gx show
+
+# 日志：选择后返回提交哈希
+gx log
+
+# 查看 worktree 工作树列表
+gx ls
+
+# 切换分支：选择本地及远端分支，会修改工作区
+gx co --all-branches
+
+# 恢复 stash：选择并恢复，会修改工作区
+gx stash
+
+# 查看完整参数
+gx --help

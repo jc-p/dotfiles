@@ -1,0 +1,23 @@
+# 搜索文件：选择后返回路径
+sx files
+
+# 搜索文件并打开编辑器
+sx files --edit
+
+# 搜索文件并打开 VS Code
+sx files --code
+
+# 搜索内容：关键词替换为实际内容，选择后跳到编辑器对应行
+sx grep 关键词
+
+# 搜索内容并打开 VS Code 对应行
+sx grep --code 关键词
+
+# 搜索内容：只输出文件和行号，不打开编辑器
+sx grep --print 关键词
+
+# 按类型搜索：只查当前目录的 TypeScript 文件
+sx grep -- -g '*.ts' 关键词 .
+
+# 查看完整参数
+sx --help

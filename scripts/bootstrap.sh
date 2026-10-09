@@ -22,6 +22,9 @@ if ! command -v brew >/dev/null 2>&1; then
 fi
 
 source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# 只准备声明的依赖，避免安装时顺带更新 taps 或清理其他旧版本。
+# 这些设置只作用于本脚本及其子进程；brew update/cleanup 由用户另行执行。
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
 brew bundle --file="$source_dir/Brewfile"
 # 固定使用刚安装的 Homebrew mise，避免旧 ~/.local/bin/mise 抢占。
 mise_bin="$(brew --prefix mise)/bin/mise"

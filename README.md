@@ -112,6 +112,8 @@ mise 的 `auto_install` 已关闭。通用默认工具为 Node 24、Python 3.12�
 
 `dot_local/bin/executable_*` 是四个自用工具的源码，由 chezmoi 部署为 `~/.local/bin/gx`、`sx`、`omc-build`、`rx`；本次以既有本机脚本为基线纳管。依赖在 Brewfile 和 mise 中声明，Java/Maven 按工作需要单独准备。`rx` 的 profile、SSH 主机和凭据仍留本机，不采集进仓库。
 
+`dev-tools help` 是 cheat 的薄封装，也由 chezmoi 部署。工具名直接查看短速查页，中文关键词直接搜索，不带参数时用 fzf 选择页名。六张精选页和 cheat 配置一起同步，常用示例只维护在 `dot_config/cheat/cheatsheets/common/`；用法见[命令速查](docs/cheatsheet.md#怎么查)。它与 `dev-tools-mcp` 独立，不注册新 MCP endpoint，不执行速查页中的命令。
+
 - 修改工具用 `chezmoi edit ~/.local/bin/gx` 等入口，避免另建源码副本。
 - 新增能力直接维护对应工具的子命令、原生帮助和测试；日常用法统一放在命令速查。
 - 修改后先做对应工具检查，预览目标差异，再应用；提交和推送独立处理。

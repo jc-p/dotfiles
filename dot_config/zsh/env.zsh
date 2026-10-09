@@ -28,3 +28,4 @@ path=(
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 export RIPGREP_CONFIG_PATH="${RIPGREP_CONFIG_PATH:-$HOME/.ripgreprc}"
 export TLDR_LANGUAGE="zh"
+export CHEAT_CONFIG_PATH="${CHEAT_CONFIG_PATH:-$HOME/.config/cheat/conf.yml}"

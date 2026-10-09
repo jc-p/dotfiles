@@ -4,6 +4,24 @@
 
 ## 怎么查
 
+终端统一入口是 `dev-tools help`，底层使用 cheat。工具名直接显示整页，中文场景直接搜索；不带参数时用 fzf 选择页名。只显示示例，不执行示例：
+
+```bash
+dev-tools help              # 选择速查页，回车查看，Esc 退出
+dev-tools help gx           # 直接查看 Git 工具速查
+dev-tools help rx           # 直接查看传输速查
+dev-tools help 差异          # 搜索相关用法
+dev-tools help 传文件        # 搜索上传、下载用法
+dev-tools help 打补丁 --plain # 关闭分页，输出文本
+dev-tools help --list       # 列出速查页
+```
+
+六张精选页为 `gx`、`sx`、`rx`、`omc-build`、`shell`、`go`。完整参数仍查工具自身的 `--help`。分页时按 `q` 退出；Tab 补全工具名和常用关键词。原生入口 `cheat gx`、`cheat -s 差异`、`cheat -l` 也可用。
+
+速查页正本在 `dot_config/cheat/cheatsheets/common/`，由 chezmoi 部署到 `~/.config/cheat/cheatsheets/common/`。配置将这些页设为只读；修改时用 `chezmoi edit ~/.config/cheat/cheatsheets/common/gx`，预览后应用。中文说明应与其下一条命令一起维护。`CHEAT_CONFIG_PATH` 默认指向 `~/.config/cheat/conf.yml`，允许本机覆盖。
+
+本页保留配置与背景说明，六个工具的常用示例以速查页为准，不再从 Markdown 生成速查目录。MCP 参数及审批边界仍以 MCP 项目的 `USER_GUIDE.md` 和注册表为准；查询入口不扫描 profile、历史命令或凭据，不将 CLI 的全部命令视为 MCP 已支持。
+
 用已有的 `less` 打开本页，输入 `/差异` 或 `/搜索` 查找，`n` 跳到下一处，`q` 退出：
 
 ```bash
@@ -106,25 +124,18 @@ delta 自动增强 Git 的差异显示，默认上下对比、新旧行号和 `+
 
 ## 独立工具
 
-四个自用工具由 dotfiles 管理源码和部署，依赖显式安装。每个工具用 `--help` 查完整用法；已有 Zsh 补全系统时，输入工具名后按 Tab 查看子命令。工作工具的私有配置仍独立留本机。
+文件与内容搜索使用 `sx`，Git 交互使用 `gx`，传输和远端操作使用 `rx`，OMC 编译与交付使用 `omc-build`。工具用法直接查 `dev-tools help 工具名`。
 
-- `gx`：Git 交互工作流。`gx show` 选提交并展示；`gx diff` 选工作区变更文件并显示差异，`--cached` 看暂存区、`--edit` 打开编辑器；`gx co --all-branches` 选分支，`gx stash` 选 stash 并恢复（会修改工作区）。原 `gx log` 保持不变，不另设 Shell 兼容入口。
-- `sx`：文件和内容搜索，最常用的是 `sx files`、`sx files --edit`、`sx grep 关键词`。完整示例见下方。
-- `rx`：已确认常用；用于传输、远端执行、日志和备份恢复。先查 `rx --help`；具体参数查 `rx 子命令 --help`。传输和远端执行可能修改远端，查看帮助不会执行这些操作。
-- `omc-build`：OMC 编译、交付打包和依赖提取。先查 `omc-build --help`，提供 `build`、`patch`、`deps` 等子命令；构建命令会写入产物。
-- `go`：本机当前为 Go 开发工具，查 `go help` 或 `go help build` 等专题帮助；不与 Shell 快捷方式合并。
+精选速查页：
 
-```bash
-sx files                   # 选择文件，返回路径
-sx files --edit            # 选择后用 EDITOR 打开
-sx files --code            # 选择后用 VS Code 打开
-sx grep 关键词              # 查内容，选择后跳到编辑器匹配行
-sx grep --code 关键词       # 查内容，选择后用 VS Code 跳行
-sx grep --print 关键词      # 只返回 文件:行号，不打开编辑器
-sx grep -- -g '*.ts' 关键词 . # 转发原生 rg 选项，明确搜索当前目录
-```
+- [gx：差异、提交和分支](../dot_config/cheat/cheatsheets/common/gx)
+- [sx：文件和内容搜索](../dot_config/cheat/cheatsheets/common/sx)
+- [rx：传文件、远端操作和恢复](../dot_config/cheat/cheatsheets/common/rx)
+- [omc-build：编译、打补丁和依赖](../dot_config/cheat/cheatsheets/common/omc-build)
+- [shell：清屏、重载和导航](../dot_config/cheat/cheatsheets/common/shell)
+- [go：Go 专题帮助](../dot_config/cheat/cheatsheets/common/go)
 
-取消选择或无匹配返回非零，不打开编辑器。`sx files` 默认使用 fd，管道输入可用 `sx files --stdin`；`FZF_DEFAULT_COMMAND` 仍用于 fzf 自身的快捷键，不决定 sx 的文件来源。特殊路径中的制表符和换行暂不支持，工具会报错；此类文件请直接使用原生工具处理。
+工作工具的私有配置仍独立留本机。`rx` 的 CLI 传输需要显式加 `--dry-run`；MCP 的默认值另查 MCP 手册。构建、传输、恢复、清理与切换分支可能产生写入，查帮助不会执行这些操作。
 
 ## Homebrew
 

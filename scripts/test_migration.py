@@ -31,6 +31,7 @@ if [[ "$1" == --prefix ]]; then
   exit 0
 fi
 printf 'brew %s\\n' "$*" >> "$DOTFILES_TEST_LOG"
+[[ "${HOMEBREW_NO_AUTO_UPDATE:-}" == 1 && "${HOMEBREW_NO_INSTALL_CLEANUP:-}" == 1 ]] || exit 8
 [[ "$DOTFILES_TEST_FAIL_BREW" == 0 ]] || exit 7
 ''')
         mise = prefix / "bin/mise"

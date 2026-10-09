@@ -48,7 +48,8 @@ rendered = subprocess.run(
      'dot_config/starship.toml.tmpl'], capture_output=True, text=True, check=True,
 )
 tomllib.loads(rendered.stdout)
-for path in [Path('dot_config/zsh/replace.py'), Path('dot_local/bin/executable_sx'), *Path('scripts').glob('test_*.py')]:
+for path in [Path('dot_config/zsh/replace.py'), Path('dot_local/bin/executable_sx'),
+             Path('dot_local/bin/executable_dev-tools'), *Path('scripts').glob('test_*.py')]:
     ast.parse(path.read_text(), filename=str(path))
 print('TOML 与 Python 语法检查通过')
 PY
@@ -57,4 +58,5 @@ zsh -f scripts/test-functions.zsh
 "$python_bin" scripts/test_config.py
 "$python_bin" scripts/test_migration.py
 "$python_bin" scripts/test_tools.py
+"$python_bin" scripts/test_help.py
 printf '配置与函数检查通过\n'

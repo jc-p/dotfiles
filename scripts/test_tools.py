@@ -23,7 +23,7 @@ class ToolTests(unittest.TestCase):
         self.project = self.root / "project"
         self.binaries.mkdir()
         self.project.mkdir()
-        for name in ["gx", "sx", "rx", "omc-build"]:
+        for name in ["gx", "sx", "rx", "omc-build", "dev-tools"]:
             (self.binaries / name).symlink_to(TOOLS / ("executable_" + name))
         self.environment = dict(
             os.environ, PATH=str(self.binaries) + os.pathsep + "/opt/homebrew/bin" + os.pathsep + os.environ["PATH"],
@@ -56,7 +56,7 @@ class ToolTests(unittest.TestCase):
         return path
 
     def test_help_without_project_or_remote_access(self) -> None:
-        for name in ["gx", "sx", "rx", "omc-build"]:
+        for name in ["gx", "sx", "rx", "omc-build", "dev-tools"]:
             with self.subTest(tool=name):
                 result = self.run_tool(name, "--help")
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -192,11 +192,12 @@ print RETIRED_ENTRIES_REMOVED
         destination = self.root / "destination"
         destination.mkdir()
         (destination / ".local/bin").mkdir(parents=True)
-        targets = [str(destination / ".local/bin" / name) for name in ["gx", "sx", "rx", "omc-build"]]
+        names = ["gx", "sx", "rx", "omc-build", "dev-tools"]
+        targets = [str(destination / ".local/bin" / name) for name in names]
         result = self.run_tool("chezmoi", "--config", str(config), "--source", str(REPOSITORY),
                                "--destination", str(destination), "apply", *targets)
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name, target in zip(["gx", "sx", "rx", "omc-build"], targets):
+        for name, target in zip(names, targets):
             self.assertEqual(Path(target).read_bytes(), (TOOLS / ("executable_" + name)).read_bytes())
             self.assertTrue(os.access(target, os.X_OK))
         self.assertFalse((destination / "docs").exists())

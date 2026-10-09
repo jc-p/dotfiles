@@ -39,4 +39,7 @@ if (( $+functions[compdef] )); then
   if command -v sx >/dev/null 2>&1; then
     source <(sx --completions zsh)
   fi
+  if command -v dev-tools >/dev/null 2>&1; then
+    source <(dev-tools --completions zsh)
+  fi
 fi

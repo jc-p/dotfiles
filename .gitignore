@@ -14,3 +14,4 @@ private_dot_ssh/*config.local
 .env.*
 .DS_Store
 __pycache__/
+/dot_config/cheat/cheatsheets/local/

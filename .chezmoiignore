@@ -19,4 +19,5 @@ Brewfile.optional
 .ssh/*
 !.ssh/config
 .config/mise/conf.d/*.local.toml
+.config/cheat/cheatsheets/local/**
 .vimrc.local

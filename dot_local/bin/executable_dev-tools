@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""cheat 的只读入口：直接查工具、搜索场景，或交互选择速查页。"""
+
+import argparse
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+
+
+def environment(plain: bool = False) -> dict[str, str]:
+    result = dict(os.environ)
+    result.setdefault("CHEAT_CONFIG_PATH", str(Path.home() / ".config/cheat/conf.yml"))
+    if plain:
+        result["CHEAT_PAGER"] = ""
+    return result
+
+
+def sheet_names(cheat: str, env: dict[str, str]) -> list[str]:
+    result = subprocess.run([cheat, "-b"], capture_output=True, text=True,
+                            env=env, timeout=5, check=False)
+    if result.returncode:
+        raise ValueError("无法读取 cheat 速查目录；请检查 CHEAT_CONFIG_PATH 和配置是否已应用")
+    # 只接收合法页名；不将表头、标签或任意输出交给预览命令。
+    names = [line.split()[0] for line in result.stdout.splitlines() if line.split()]
+    return [name for name in names if re.fullmatch(r"[\w][\w./-]*", name) and name != "title"]
+
+
+def pick_sheet(cheat: str, names: list[str], env: dict[str, str]) -> str | None:
+    fzf_env = dict(env, CHEAT_PAGER="")
+    for name in ("FZF_DEFAULT_OPTS", "FZF_DEFAULT_OPTS_FILE", "FZF_DEFAULT_COMMAND"):
+        fzf_env.pop(name, None)
+    selected = subprocess.run(
+        ["fzf", "--height=80%", "--layout=reverse", "--border", "--prompt=工具用法 > ",
+         "--header=回车查看；Esc 退出；不执行示例",
+         "--preview", f"{shlex.quote(cheat)} {{}}", "--preview-window=right:65%:wrap"],
+        input="\n".join(names), capture_output=True, text=True, env=fzf_env, check=False,
+    )
+    if selected.returncode in (1, 130):
+        return None
+    if selected.returncode:
+        raise ValueError(f"fzf 查询失败：{selected.stderr.strip()[:200]}；可用 --list 或直接指定工具名")
+    name = selected.stdout.strip()
+    if name not in names:
+        raise ValueError("fzf 返回无效页名")
+    return name
+
+
+def display(cheat: str, arguments: list[str], env: dict[str, str]) -> int:
+    result = subprocess.run([cheat, *arguments], env=env, check=False)
+    # cheat 的搜索输出可能没有末尾换行，避免下一条 Shell 提示符粘在命令末尾。
+    print()
+    return result.returncode
+
+
+def completions() -> str:
+    return """#compdef dev-tools
+_dev_tools_help() {
+  if (( CURRENT == 2 )); then
+    compadd help
+  else
+    compadd -- gx sx rx omc-build shell go 差异 搜索 传文件 打补丁 --plain --list
+  fi
+}
+compdef _dev_tools_help dev-tools
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="用 cheat 查常用命令；只显示，不执行示例")
+    parser.add_argument("--completions", choices=["zsh"], help="输出 Zsh 补全")
+    commands = parser.add_subparsers(dest="command")
+    help_parser = commands.add_parser("help", help="指定工具名、搜索关键词，或选择速查页")
+    help_parser.add_argument("query", nargs="*", help="gx、sx、rx、omc-build、shell、go，或中文场景")
+    help_parser.add_argument("--plain", action="store_true", help="关闭分页，直接输出文本")
+    help_parser.add_argument("--list", action="store_true", help="列出速查页")
+    options = parser.parse_args()
+    if options.completions:
+        print(completions(), end="")
+        return 0
+    if options.command != "help":
+        parser.print_help()
+        return 0
+    cheat = shutil.which("cheat")
+    if not cheat:
+        raise ValueError("找不到 cheat；先显式安装 brew install cheat，再应用 dotfiles 的 cheat 配置")
+    env = environment(options.plain)
+    names = sheet_names(cheat, env)
+    query = " ".join(options.query).strip()
+    if options.list:
+        return display(cheat, ["-b", *([query] if query else [])], env)
+    if query:
+        # argv 传参，不经 shell；工具名查看整页，场景关键词交给 cheat 搜索。
+        arguments = [query] if query in names else ["-s", query]
+        return display(cheat, arguments, env)
+    if names and sys.stdin.isatty() and sys.stdout.isatty() and shutil.which("fzf") and not options.plain:
+        name = pick_sheet(cheat, names, env)
+        if name is None:
+            return 0
+        return display(cheat, [name], env)
+    return display(cheat, ["-b"], env)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except BrokenPipeError:
+        raise SystemExit(0)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        print(f"用法查询失败：{error}", file=sys.stderr)
+        raise SystemExit(2) from error
+    except KeyboardInterrupt:
+        raise SystemExit(130)

@@ -1,0 +1,14 @@
+# Go 开发工具总览
+go help
+
+# 编译：查看参数，实际构建可能生成缓存并下载依赖
+go help build
+
+# 测试：查看参数，实际测试可能写缓存并下载依赖
+go help test
+
+# Go 模块依赖管理：查看帮助
+go help mod
+
+# 查看 Go 版本
+go version

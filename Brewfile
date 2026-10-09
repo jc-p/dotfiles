@@ -2,6 +2,7 @@
 brew "chezmoi"
 brew "bash"  # rx 使用 Bash 4+ 特性，不使用 macOS 自带的 Bash 3。
 brew "argc"  # gx、omc-build、rx 的参数解析与补全。
+brew "cheat" # 常用命令速查；dev-tools help 复用此工具。
 brew "rsync" # rx 的传输依赖。
 brew "git"
 brew "git-delta"

@@ -16,6 +16,8 @@ bash "$dotfiles_source/scripts/check.sh"
 
 安装脚本只在显式执行时下载：先安装 Brewfile（含 Bash、argc、rsync），再用 Homebrew mise 安装源码声明的 Node 24、Python 3.12、pnpm 10，并生成 shims。检查离线运行；不要求先把配置应用到家目录。
 
+脚本内关闭 Homebrew 自动更新和自动清理，避免准备依赖时顺带调整其他安装；需要时另行显式执行 `brew update` 或 `brew cleanup`。
+
 ## 2. 备份并准备本机文件
 
 按 README 备份现有目标，创建缺失的本机文件。已有文件保持原样：
@@ -38,6 +40,7 @@ chezmoi diff ~/.gitconfig ~/.ssh/config ~/.config/mise
 chezmoi diff ~/.vimrc ~/.vim/plug-snapshot.vim ~/.config/starship.toml
 mkdir -p "$HOME/.local/bin"
 chezmoi diff ~/.local/bin/gx ~/.local/bin/sx ~/.local/bin/omc-build ~/.local/bin/rx
+chezmoi diff ~/.local/bin/dev-tools ~/.config/cheat
 chezmoi --dry-run apply
 chezmoi apply
 zsh -li "$dotfiles_source/scripts/verify.zsh"
@@ -80,19 +83,22 @@ macOS 自带 curl/grep/sed 保留，tree 使用 eza。确有 GNU 行为要求时
 - 私有内容：筛选后私下恢复 `~/.config/rx/config.toml`、SSH 主机和密钥、Git 身份。它们不在公开仓库里，克隆不能恢复登录授权。
 - 工作环境：`omc-build` 的 Java/Maven 按项目在本机选择；工具脚本恢复不等于项目已能编译。ARM 安装、真实项目构建与远端连接仍需新机实际验证。
 - 入口：文件/内容搜索只使用 `sx`，Git 交互只使用 `gx`，不恢复旧兼容函数。
+- 手册：核心 Brewfile 安装 cheat，chezmoi 同步 `~/.config/cheat` 与 `dev-tools help`。精选速查页随仓库迁移，不再依赖 glow 或本机 MCP 文档路径。MCP 项目本身及其依赖仍需单独迁移。
 
 ## 已有 Mac 更新工具
 
-已有 chezmoi 源码时不用重新 init。先拉取，再预览并只应用工具和两个关联模块，避免覆盖其他本机配置差异。依赖清单有新增且本机缺失时，另行显式运行 `bootstrap.sh`。
+已有 chezmoi 源码时不用重新 init。先拉取，再预览并只应用工具和关联模块，避免覆盖其他本机配置差异。依赖清单有新增且本机缺失时，另行显式运行 `bootstrap.sh`。
 
 ```bash
 dotfiles_source="$(chezmoi source-path)"
 git -C "$dotfiles_source" pull --ff-only
 mkdir -p "$HOME/.local/bin"
 chezmoi diff ~/.local/bin/gx ~/.local/bin/sx ~/.local/bin/omc-build ~/.local/bin/rx \
-  ~/.config/zsh/functions.zsh ~/.config/zsh/tools.zsh
+  ~/.local/bin/dev-tools ~/.config/cheat \
+  ~/.config/zsh/functions.zsh ~/.config/zsh/tools.zsh ~/.config/zsh/env.zsh
 chezmoi apply ~/.local/bin/gx ~/.local/bin/sx ~/.local/bin/omc-build ~/.local/bin/rx \
-  ~/.config/zsh/functions.zsh ~/.config/zsh/tools.zsh
+  ~/.local/bin/dev-tools ~/.config/cheat \
+  ~/.config/zsh/functions.zsh ~/.config/zsh/tools.zsh ~/.config/zsh/env.zsh
 ```
 
 然后打开新终端；旧入口也会在 `szsh` 重载时清退。输入 `gx --help`、`sx --help`、`omc-build --help`、`rx --help` 验证安装，Tab 补全依赖已有的 Zsh 补全系统。上述定向应用不包含 Starship 等其他配置。
