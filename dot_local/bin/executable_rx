@@ -1,0 +1,1459 @@
+#!/usr/bin/env bash
+# @describe rsync 封装工具：支持 profile、日志、安全检查与自动备份。
+#
+# @version 0.4.0
+
+set -eo pipefail
+
+# ============================================================
+# 配置
+# ============================================================
+RX_CONFIG_PATH="${RX_CONFIG_PATH:-$HOME/.config/rx/config.toml}"
+RX_LOG_DIR="${RX_LOG_DIR:-$HOME/.local/state/rx/logs}"
+RX_REMOTE_LOG_DIR="${RX_REMOTE_LOG_DIR:-$HOME/.local/state/rx/remote-logs}"
+
+readonly DEFAULT_RSYNC_ARGS=(
+    -az
+    --human-readable
+    --info=progress2
+    --partial
+    --partial-dir=.rsync-partial
+)
+
+declare -A RX_PROFILES=()
+
+# ============================================================
+# 样式与输出
+# ============================================================
+supports_color() {
+    [[ -t 2 ]] && [[ -z "${NO_COLOR:-}" ]] && [[ "${TERM:-}" != "dumb" ]]
+}
+
+style() {
+    local text=$1
+    shift
+    local -a codes=()
+    local s
+    for s in "$@"; do
+        case "$s" in
+        bold) codes+=(1) ;;
+        dim) codes+=(2) ;;
+        green) codes+=(32) ;;
+        yellow) codes+=(33) ;;
+        red) codes+=(31) ;;
+        cyan) codes+=(36) ;;
+        esac
+    done
+    if supports_color && ((${#codes[@]} > 0)); then
+        printf '\033[%sm%s\033[0m' "$(
+            IFS=';'
+            echo "${codes[*]}"
+        )" "$text"
+    else
+        printf '%s' "$text"
+    fi
+}
+
+# 显示宽度（中文字符算 2）
+_display_width() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import sys, unicodedata
+print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in sys.argv[1]))
+' "$1"
+    else
+        printf '%d' "${#1}"
+    fi
+}
+
+_pad() {
+    local s=$1 target=$2 w
+    w=$(_display_width "$s")
+    printf '%s' "$s"
+    while ((w < target)); do
+        printf ' '
+        w=$((w + 1))
+    done
+}
+
+die() {
+    printf '\n  %s rx: %s\n' "$(style '✗' bold red)" "$*" >&2
+    exit 2
+}
+
+# print_section TITLE [STATUS] ROW...
+print_section() {
+    local title=$1
+    shift
+    local status=${1:-}
+    shift || true
+
+    local icon color
+    case "$status" in
+    success)
+        icon="✓"
+        color="bold green"
+        ;;
+    warning)
+        icon="!"
+        color="bold yellow"
+        ;;
+    error)
+        icon="✗"
+        color="bold red"
+        ;;
+    *)
+        icon="•"
+        color="bold cyan"
+        ;;
+    esac
+    local -a _styles=()
+    read -ra _styles <<<"$color"
+
+    printf '\n  %s %s\n' \
+        "$(style "$icon" "${_styles[@]}")" \
+        "$(style "rx $title" "${_styles[@]}")" >&2
+
+    local row label value
+    for row in "$@"; do
+        label="${row%%:*}"
+        value="${row#*:}"
+        printf '      %s  %s\n' "$(style "$(_pad "$label:" 8)" dim)" "$value" >&2
+    done
+}
+
+# ============================================================
+# 通用小工具
+# ============================================================
+timestamp() {
+    local n
+    n=$(date '+%N' 2>/dev/null) || n=""
+    if [[ "$n" =~ ^[0-9]+$ ]]; then
+        date '+%Y%m%d-%H%M%S-%N'
+    else
+        date '+%Y%m%d-%H%M%S'
+    fi
+}
+
+_iso_now() {
+    date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z'
+}
+
+_file_size() {
+    if stat --version >/dev/null 2>&1; then
+        stat -c '%s' "$1"
+    else
+        stat -f '%z' "$1"
+    fi
+}
+
+_file_mtime_epoch() {
+    if stat --version >/dev/null 2>&1; then
+        stat -c '%Y' "$1"
+    else
+        stat -f '%m' "$1"
+    fi
+}
+
+_file_mtime_human() {
+    local epoch=$1
+    date -d "@$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null ||
+        date -r "$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null ||
+        printf '%s' "$epoch"
+}
+
+human_size() {
+    local size=$1
+    if command -v numfmt >/dev/null 2>&1; then
+        numfmt --to=iec --suffix=B "$size" 2>/dev/null && return 0
+    fi
+    local -a units=(B K M G T)
+    local i=0 v=$size
+    while ((v >= 1024 && i < 4)); do
+        v=$((v / 1024))
+        i=$((i + 1))
+    done
+    if ((i == 0)); then
+        printf '%dB' "$size"
+    else
+        printf '%d%s' "$v" "${units[$i]}"
+    fi
+}
+
+# 解析 30d / 12h / 4w / 45m / 90s 为秒
+_parse_age_seconds() {
+    local spec=$1
+    if [[ "$spec" =~ ^([0-9]+)([smhdw])$ ]]; then
+        local n="${BASH_REMATCH[1]}"
+        case "${BASH_REMATCH[2]}" in
+        s) printf '%d' "$n" ;;
+        m) printf '%d' "$((n * 60))" ;;
+        h) printf '%d' "$((n * 3600))" ;;
+        d) printf '%d' "$((n * 86400))" ;;
+        w) printf '%d' "$((n * 604800))" ;;
+        esac
+        return 0
+    fi
+    return 1
+}
+
+# ============================================================
+# 路径与 profile
+# ============================================================
+is_remote_path() {
+    local value=$1
+    [[ "$value" == rsync://* ]] && return 0
+    [[ "$value" != *:* ]] && return 1
+    local prefix="${value%%:*}"
+    [[ "$prefix" != */* ]]
+}
+
+remote_path_part() {
+    local value=$1
+    if [[ "$value" == rsync://* ]]; then
+        local without="${value#rsync://}"
+        local rest="${without#*/}"
+        if [[ "$rest" == "$without" ]]; then
+            printf ''
+        else
+            printf '/%s' "$rest"
+        fi
+        return 0
+    fi
+    [[ "$value" != *:* ]] && return 1
+    local prefix="${value%%:*}"
+    [[ "$prefix" == */* ]] && return 1
+    printf '%s' "${value#*:}"
+}
+
+normalize_path() {
+    local value=$1
+    if is_remote_path "$value"; then
+        printf '%s' "$value"
+        return
+    fi
+    local expanded="${value/#\~/$HOME}"
+    if [[ "$value" == */ && "$expanded" != "/" ]]; then
+        printf '%s/' "${expanded%/}"
+    else
+        printf '%s' "$expanded"
+    fi
+}
+
+validate_local_source() {
+    local source=$1
+    is_remote_path "$source" && return 0
+    [[ -e "${source/#\~/$HOME}" ]] || die "本地源不存在: $source"
+}
+
+load_config() {
+    RX_PROFILES=()
+    local config=$RX_CONFIG_PATH
+    [[ -f "$config" ]] || return 0
+
+    local line current=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ -z "$line" || "$line" == \#* ]] && continue
+
+        if [[ "$line" =~ ^\[profiles\.([^]]+)\]$ ]]; then
+            current="${BASH_REMATCH[1]}"
+            continue
+        fi
+        if [[ -n "$current" && "$line" =~ ^path[[:space:]]*=[[:space:]]*\"(.*)\"$ ]]; then
+            RX_PROFILES["$current"]="${BASH_REMATCH[1]}"
+            current=""
+        fi
+    done <"$config"
+}
+
+resolve_profile() {
+    local value=$1
+    [[ "$value" == @* ]] || {
+        printf '%s' "$value"
+        return 0
+    }
+    local name="${value#@}"
+    [[ -z "$name" ]] && die "空的 profile 引用: @"
+
+    if [[ -n "${RX_PROFILES[$name]:-}" ]]; then
+        printf '%s' "${RX_PROFILES[$name]}"
+        return 0
+    fi
+    local available="无"
+    if ((${#RX_PROFILES[@]} > 0)); then
+        available=$(printf '@%s ' "${!RX_PROFILES[@]}")
+    fi
+    die "未知 profile @$name；可用: $available"
+}
+
+# ============================================================
+# 安全校验
+# ============================================================
+dangerous_destination_reason() {
+    local dest=$1
+    local raw="${dest%%/}"
+    if [[ -z "$raw" || "$raw" == "." || "$raw" == ".." || "$raw" == "~" ]]; then
+        printf '本地目标过于宽泛，禁止 --delete'
+        return 0
+    fi
+
+    if is_remote_path "$dest"; then
+        local part clean
+        part=$(remote_path_part "$dest" || printf '')
+        clean="${part%%/}"
+        case "$clean" in
+        "" | "." | "~" | "/")
+            printf '远端目标过于宽泛，禁止 --delete'
+            ;;
+        /home | /Users | /root | /var | /opt | /usr | /tmp)
+            printf '远端目标 %s 过于宽泛，禁止 --delete' "$clean"
+            ;;
+        esac
+        return 0
+    fi
+
+    local expanded="${dest/#\~/$HOME}"
+    local abs
+    if [[ "$expanded" == /* ]]; then
+        abs="$expanded"
+    else
+        abs="$PWD/$expanded"
+    fi
+    local clean
+    clean=$(realpath -m "$abs" 2>/dev/null || printf '%s' "$abs")
+    case "$clean" in
+    / | "$HOME" | /home | /Users | /root | /var | /opt | /usr | /tmp)
+        printf '本地目标 %s 过于宽泛，禁止 --delete' "$clean"
+        ;;
+    esac
+}
+
+# ============================================================
+# rsync 命令构建
+# ============================================================
+rx_backup_enabled() {
+    [[ "${RX_FORCE_BACKUP:-0}" == "1" ]] && return 0
+    [[ "${argc_backup:-0}" == "1" ]]
+}
+
+build_rsync_command() {
+    local source=$1 destination=$2
+    source=$(normalize_path "$source")
+    destination=$(normalize_path "$destination")
+    validate_local_source "$source"
+
+    local -a cmd=(rsync "${DEFAULT_RSYNC_ARGS[@]}")
+    [[ "${argc_dry_run:-0}" == "1" ]] && cmd+=(--dry-run)
+    [[ "${argc_delete:-0}" == "1" ]] && cmd+=(--delete)
+    [[ -n "${argc_limit:-}" ]] && cmd+=(--bwlimit "$argc_limit")
+
+    local p
+    for p in "${argc_exclude[@]:-}"; do
+        [[ -n "$p" ]] && cmd+=(--exclude "$p")
+    done
+
+    if rx_backup_enabled; then
+        cmd+=(--backup --backup-dir ".rx-backup/$(timestamp)")
+    fi
+
+    cmd+=("$source" "$destination")
+    printf '%q ' "${cmd[@]}"
+}
+
+find_backup_dir() {
+    local cmd_str=$1
+    if [[ "$cmd_str" =~ --backup-dir[[:space:]]+([^[:space:]]+) ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+    fi
+}
+
+# ============================================================
+# 日志
+# ============================================================
+make_log_path() {
+    local command=$1
+    mkdir -p "$RX_LOG_DIR"
+    printf '%s/%s-%s.log' "$RX_LOG_DIR" "$(timestamp)" "$command"
+}
+
+write_log_header() {
+    local log_path=$1 command_str=$2
+    {
+        printf '# started: %s\n' "$(_iso_now)"
+        printf '# command: %s\n\n' "$command_str"
+    } >>"$log_path"
+}
+
+write_log_footer() {
+    local log_path=$1 return_code=$2
+    {
+        printf '\n# ended: %s\n' "$(_iso_now)"
+        printf '# exit_code: %s\n' "$return_code"
+    } >>"$log_path"
+}
+
+latest_log_paths() {
+    local limit=$1
+    [[ -d "$RX_LOG_DIR" ]] || return 0
+
+    local output
+    if output=$(find "$RX_LOG_DIR" -maxdepth 1 -name '*.log' -type f -printf '%T@\t%p\n' 2>/dev/null); then
+        printf '%s\n' "$output" | sort -rn | head -n "$limit" | cut -f2-
+    else
+        local -a pairs=()
+        local f
+        for f in "$RX_LOG_DIR"/*.log; do
+            [[ -f "$f" ]] || continue
+            pairs+=("$(_file_mtime_epoch "$f")"$'\t'"$f")
+        done
+        ((${#pairs[@]})) || return 0
+        printf '%s\n' "${pairs[@]}" |
+            sort -t $'\t' -rn -k1,1 |
+            head -n "$limit" |
+            cut -f2-
+    fi
+}
+
+# ============================================================
+# 计划 / 说明
+# ============================================================
+describe_mode() {
+    local -a flags=()
+    [[ "${argc_dry_run:-0}" == "1" ]] && flags+=(试运行)
+    [[ "${argc_delete:-0}" == "1" ]] && flags+=(删除)
+    rx_backup_enabled && flags+=(备份)
+    [[ "${argc_bg:-0}" == "1" ]] && flags+=(后台)
+    if ((${#flags[@]} == 0)); then
+        printf '普通'
+        return
+    fi
+    local out="" f
+    for f in "${flags[@]}"; do
+        out+="${out:+, }$f"
+    done
+    printf '%s' "$out"
+}
+
+print_run_plan() {
+    local source=$1 destination=$2 command_str=$3 log_path=${4:-}
+    local -a rows=(
+        "模式:$(describe_mode)"
+        "源:$(normalize_path "$source")"
+        "目标:$(normalize_path "$destination")"
+    )
+    local backup_dir
+    backup_dir=$(find_backup_dir "$command_str" || true)
+    if [[ -n "$backup_dir" ]]; then
+        rows+=("备份到:${destination%/}/$backup_dir")
+    fi
+    rows+=("日志:${log_path:-（仅计划模式，不写日志）}")
+
+    print_section "计划" "" "${rows[@]}"
+    printf '\n      %s %s\n' "$(style '→' bold cyan)" "$(style "$command_str" bold)" >&2
+}
+
+print_explain() {
+    local destination=$1
+    local danger
+    danger=$(dangerous_destination_reason "$(normalize_path "$destination")" || true)
+
+    local delete_note="关闭"
+    if [[ "${argc_delete:-0}" == "1" ]]; then
+        delete_note="${danger:-执行前会要求确认，然后删除目标端多余文件}"
+    fi
+
+    local backup_note
+    if rx_backup_enabled; then
+        backup_note="覆盖或删除的旧文件会被移到 ${destination%/}/.rx-backup/<时间戳>/"
+    else
+        backup_note="关闭（用 --backup 或 up 子命令开启）"
+    fi
+
+    local status=""
+    [[ "${argc_delete:-0}" == "1" ]] && status="warning"
+
+    print_section "说明" "$status" \
+        "动作:仅计划，不会执行 rsync" \
+        "删除:$delete_note" \
+        "备份:$backup_note" \
+        "profile:${#RX_PROFILES[@]} 个，来自 $RX_CONFIG_PATH" \
+        "下一步:去掉 --plan 重新执行"
+}
+
+confirm_delete() {
+    local source=$1 destination=$2
+    [[ "${argc_delete:-0}" != "1" || "${argc_dry_run:-0}" == "1" ]] && return 0
+
+    local -a rows=(
+        "效果:删除目标端在源端已不存在的文件"
+        "源:$(normalize_path "$source")"
+        "目标:$(normalize_path "$destination")"
+    )
+    rx_backup_enabled && rows+=("备份:删除的文件会保留到 .rx-backup/<时间戳>/")
+    print_section "删除确认" warning "${rows[@]}"
+
+    printf '      %s ' "$(style '继续? [y/N]:' bold yellow)" >&2
+    local answer=""
+    read -r answer || answer=""
+    case "${answer,,}" in
+    y | yes | delete) ;;
+    *) die "已取消删除操作" ;;
+    esac
+}
+
+# ============================================================
+# 传输执行
+# ============================================================
+run_foreground() {
+    local source=$1 destination=$2 command_str=$3 log_path=$4
+    print_run_plan "$source" "$destination" "$command_str" "$log_path"
+    write_log_header "$log_path" "$command_str"
+
+    set +e
+    eval "$command_str" 2>&1 | tee -a "$log_path"
+    local return_code
+    return_code=${PIPESTATUS[0]}
+    set -e
+
+    write_log_footer "$log_path" "$return_code"
+
+    local outcome="成功" section_status="success"
+    if [[ "$return_code" != "0" ]]; then
+        outcome="失败"
+        section_status="error"
+    fi
+    print_section "完成" "$section_status" \
+        "状态:$outcome" \
+        "退出码:$return_code" \
+        "日志:$log_path"
+    return "$return_code"
+}
+
+run_in_background() {
+    local source=$1 destination=$2 command_str=$3 log_path=$4
+    print_run_plan "$source" "$destination" "$command_str" "$log_path"
+    command -v tmux >/dev/null || die "找不到 tmux 命令"
+    write_log_header "$log_path" "$command_str"
+
+    local session="rx-$(timestamp)"
+    local shell_script
+    shell_script=$(
+        cat <<EOF
+set -o pipefail
+$command_str 2>&1 | tee -a $(printf '%q' "$log_path")
+status=\${PIPESTATUS[0]}
+printf '\n# ended: %s\n# exit_code: %s\n' "\$(date '+%Y-%m-%dT%H:%M:%S%z')" "\$status" >> $(printf '%q' "$log_path")
+printf '\nrx log: %s\nrx exit: %s\n' $(printf '%q' "$log_path") "\$status"
+exec "\${SHELL:-/bin/bash}" -l
+EOF
+    )
+    tmux new-session -d -s "$session" "/bin/bash" -lc "$shell_script"
+
+    print_section "后台" success \
+        "会话:$session" \
+        "附加:tmux attach -t $session" \
+        "日志:$log_path"
+}
+
+run_transfer() {
+    local command=$1 source=$2 destination=$3
+
+    load_config
+    source=$(resolve_profile "$source")
+    destination=$(resolve_profile "$destination")
+
+    local command_str
+    command_str=$(build_rsync_command "$source" "$destination")
+
+    if [[ "${argc_plan:-0}" == "1" ]]; then
+        print_run_plan "$source" "$destination" "$command_str"
+        print_explain "$destination"
+        return 0
+    fi
+
+    local log_path
+    log_path=$(make_log_path "$command")
+
+    local reason
+    reason=$(dangerous_destination_reason "$(normalize_path "$destination")" || true)
+    if [[ "${argc_delete:-0}" == "1" && "${argc_dry_run:-0}" != "1" && -n "$reason" ]]; then
+        die "拒绝破坏性同步：$reason；请缩小目标路径"
+    fi
+
+    confirm_delete "$source" "$destination"
+
+    if [[ "${argc_bg:-0}" == "1" ]]; then
+        run_in_background "$source" "$destination" "$command_str" "$log_path"
+    else
+        run_foreground "$source" "$destination" "$command_str" "$log_path"
+    fi
+}
+
+# ---- run：在远端执行脚本或命令 ----
+run_remote() {
+    local target=$1
+    shift || true
+    local -a extra_args=("$@")
+
+    load_config
+    target=$(resolve_profile "$target")
+
+    [[ "$target" == rsync://* ]] && die "rsync:// 目标不支持 run"
+
+    local host="" cmd=""
+
+    if [[ "${argc_stdin:-0}" == "1" ]]; then
+        # --stdin：目标只写 host，脚本从标准输入读
+        if [[ "$target" == *:* ]]; then
+            die "使用 --stdin 时，目标只写 host，例如：rx run 59 --stdin"
+        fi
+        host="$target"
+        cmd="bash -s"
+    else
+        is_remote_path "$target" ||
+            die "格式错误，应为 host:命令 或 host:脚本路径，例如：rx run host:/opt/app/deploy.sh"
+        host="${target%%:*}"
+        cmd="${target#*:}"
+        [[ -n "$host" ]] || die "缺少主机名"
+        [[ -n "$cmd" ]] || die "缺少命令或脚本路径"
+    fi
+
+    command -v ssh >/dev/null 2>&1 || die "找不到 ssh 命令"
+
+    # 追加参数（逐个 quote，避免远端 shell 拆词）
+    if ((${#extra_args[@]} > 0)); then
+        local -a qargs=()
+        local a
+        for a in "${extra_args[@]}"; do
+            qargs+=("$(printf '%q' "$a")")
+        done
+        cmd+=" ${qargs[*]}"
+    fi
+
+    # --cwd
+    if [[ -n "${argc_cwd:-}" ]]; then
+        cmd="cd $(printf '%q' "$argc_cwd") && $cmd"
+    fi
+
+    # --env
+    if [[ -n "${argc_env+x}" ]] && ((${#argc_env[@]} > 0)); then
+        local -a qenvs=()
+        local kv
+        for kv in "${argc_env[@]}"; do
+            [[ -n "$kv" ]] && qenvs+=("$(printf '%q' "$kv")")
+        done
+        if ((${#qenvs[@]} > 0)); then
+            cmd="env ${qenvs[*]} $cmd"
+        fi
+    fi
+
+    # --sudo
+    if [[ "${argc_sudo:-0}" == "1" ]]; then
+        cmd="sudo bash -c $(printf '%q' "$cmd")"
+    fi
+
+    # 预览
+    printf '\n  %s %s\n\n' \
+        "$(style '→' bold cyan)" \
+        "$(style "ssh $host '$cmd'" bold)" >&2
+
+    if [[ "${argc_dry_run:-0}" == "1" ]]; then
+        printf '      %s\n\n' "$(style '（试运行，未实际执行）' dim)" >&2
+        return 0
+    fi
+
+    local -a ssh_cmd=(ssh)
+    [[ "${argc_tty:-0}" == "1" ]] && ssh_cmd+=(-t)
+    ssh_cmd+=("$host" "$cmd")
+
+    # 用 exec 替换进程：Ctrl+C、退出码都直接透传
+    exec "${ssh_cmd[@]}"
+}
+
+# ============================================================
+# 辅助子命令
+# ============================================================
+run_logs() {
+    local limit=${argc_limit:-10}
+    local -a paths=()
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && paths+=("$line")
+    done < <(latest_log_paths "$limit")
+
+    if [[ "${argc_path:-0}" == "1" ]]; then
+        printf '%s\n' "${paths[@]}"
+        return 0
+    fi
+
+    print_section "日志" "" "目录:$RX_LOG_DIR" "条数:${#paths[@]}"
+    if ((${#paths[@]} == 0)); then
+        printf '      （暂无日志）\n' >&2
+        return 0
+    fi
+    local p mtime size
+    for p in "${paths[@]}"; do
+        mtime=$(_file_mtime_human "$(_file_mtime_epoch "$p")")
+        size=$(human_size "$(_file_size "$p")")
+        printf '      %s  %8s  %s\n' "$mtime" "$size" "$p" >&2
+    done
+}
+
+run_last() {
+    local newest
+    newest=$(latest_log_paths 1 || true)
+    if [[ -z "$newest" ]]; then
+        print_section "最新日志" error "状态:暂无日志" "目录:$RX_LOG_DIR"
+        return 1
+    fi
+
+    if [[ "${argc_path:-0}" == "1" ]]; then
+        printf '%s\n' "$newest"
+        return 0
+    fi
+
+    if [[ -n "${argc_tail+x}" ]]; then
+        tail -n "${argc_tail:-60}" "$newest"
+        return 0
+    fi
+
+    print_section "最新日志" "" \
+        "文件:$newest" \
+        "大小:$(human_size "$(_file_size "$newest")")" \
+        "提示:rx last --tail 60"
+}
+
+# 查看远端主机上的日志文件
+run_rlog() {
+    local target=$1
+    local lines=${argc_lines:-60}
+    local follow=${argc_follow:-0}
+    local pattern=${argc_grep:-}
+    local do_save=${argc_save:-0}
+
+    load_config
+    target=$(resolve_profile "$target")
+
+    if [[ "$target" == rsync://* ]]; then
+        die "rsync:// 目标不支持 rlog；请用 host:/path 形式"
+    fi
+
+    local host="" path="" is_remote=0
+    if is_remote_path "$target"; then
+        is_remote=1
+        host="${target%%:*}"
+        path="${target#*:}"
+        [[ -n "$path" ]] || die "远端路径为空: $target"
+        command -v ssh >/dev/null 2>&1 || die "找不到 ssh 命令"
+    else
+        path="${target/#\~/$HOME}"
+        [[ -f "$path" ]] || die "文件不存在: $target"
+    fi
+
+    # 组装读取命令
+    local remote_cmd
+    if [[ -n "$pattern" ]]; then
+        if [[ "$follow" == "1" ]]; then
+            remote_cmd="tail -n $lines -f $(printf '%q' "$path") | grep --line-buffered -E $(printf '%q' "$pattern")"
+        else
+            remote_cmd="grep -E $(printf '%q' "$pattern") $(printf '%q' "$path") | tail -n $lines"
+        fi
+    else
+        if [[ "$follow" == "1" ]]; then
+            remote_cmd="tail -n $lines -f $(printf '%q' "$path")"
+        else
+            remote_cmd="tail -n $lines $(printf '%q' "$path")"
+        fi
+    fi
+
+    # 预览
+    if [[ "$is_remote" == "1" ]]; then
+        printf '\n  %s %s\n\n' \
+            "$(style '→' bold cyan)" \
+            "$(style "ssh $host $remote_cmd" bold)" >&2
+    else
+        printf '\n  %s %s\n\n' \
+            "$(style '→' bold cyan)" \
+            "$(style "$remote_cmd" bold)" >&2
+    fi
+
+    # 保存路径
+    local save_path=""
+    if [[ "$do_save" == "1" ]]; then
+        local tag="local"
+        [[ "$is_remote" == "1" ]] && tag="${host//[:\/]/_}"
+        local filename
+        filename=$(basename "$path")
+        save_path="$RX_REMOTE_LOG_DIR/$tag/${filename}.$(timestamp).log"
+        mkdir -p "$(dirname "$save_path")"
+        printf '      %s %s\n\n' \
+            "$(style '保存到:' dim)" "$save_path" >&2
+    fi
+
+    # 执行
+    local -a runner
+    if [[ "$is_remote" == "1" ]]; then
+        if [[ "$follow" == "1" ]]; then
+            runner=(ssh -t "$host" "$remote_cmd")
+        else
+            runner=(ssh "$host" "$remote_cmd")
+        fi
+    else
+        runner=(bash -c "$remote_cmd")
+    fi
+
+    if [[ -n "$save_path" ]]; then
+        "${runner[@]}" | tee "$save_path"
+    else
+        if [[ "$follow" == "1" ]]; then
+            exec "${runner[@]}"
+        else
+            "${runner[@]}"
+        fi
+    fi
+}
+
+# ---- undo ----
+run_undo() {
+    local target=$1
+    local ts=${argc_ts:-}
+    local do_list=${argc_list:-0}
+    local do_dry_run=${argc_dry_run:-0}
+
+    load_config
+    target=$(resolve_profile "$target")
+
+    if [[ "$target" == rsync://* ]]; then
+        die "rsync:// 目标不支持 undo"
+    fi
+
+    local host="" path="" is_remote=0
+    if is_remote_path "$target"; then
+        is_remote=1
+        host="${target%%:*}"
+        path="${target#*:}"
+    else
+        path="${target/#\~/$HOME}"
+    fi
+    [[ -n "$path" ]] || die "请提供目标路径"
+    path="${path%/}"
+    local backup_base="$path/.rx-backup"
+
+    # 列目录
+    local listing
+    if [[ "$is_remote" == "1" ]]; then
+        listing=$(ssh "$host" "ls -1 $(printf '%q' "$backup_base") 2>/dev/null" || true)
+    else
+        listing=$(ls -1 "$backup_base" 2>/dev/null || true)
+    fi
+
+    local -a available=()
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && available+=("$line")
+    done <<<"$listing"
+
+    if ((${#available[@]} == 0)); then
+        print_section "撤销" error \
+            "目标:$target" \
+            "原因:未找到备份目录 $backup_base"
+        return 1
+    fi
+
+    local -a sorted
+    mapfile -t sorted < <(printf '%s\n' "${available[@]}" | sort -r)
+
+    if [[ "$do_list" == "1" ]]; then
+        print_section "可用备份" "" \
+            "目标:$target" \
+            "目录:$backup_base" \
+            "数量:${#sorted[@]}"
+        local entry
+        for entry in "${sorted[@]}"; do
+            printf '      %s\n' "$entry" >&2
+        done
+        return 0
+    fi
+
+    # 选时间戳
+    local use_ts
+    if [[ -n "$ts" ]]; then
+        local found=0 entry
+        for entry in "${sorted[@]}"; do
+            [[ "$entry" == "$ts" ]] && {
+                found=1
+                break
+            }
+        done
+        [[ "$found" == "1" ]] || die "找不到备份时间戳: $ts"
+        use_ts="$ts"
+    else
+        use_ts="${sorted[0]}"
+    fi
+
+    local backup_dir="$backup_base/$use_ts"
+    local dest="$path/"
+
+    local -a rsync_cmd=(rsync "${DEFAULT_RSYNC_ARGS[@]}")
+    [[ "$do_dry_run" == "1" ]] && rsync_cmd+=(--dry-run)
+    rsync_cmd+=("$backup_dir/" "$dest")
+
+    local command_str
+    command_str=$(printf '%q ' "${rsync_cmd[@]}")
+
+    print_section "撤销" warning \
+        "目标:$target" \
+        "时间戳:$use_ts" \
+        "备份目录:$backup_dir/" \
+        "恢复方向:$backup_dir/ → $dest"
+    printf '\n      %s %s\n' "$(style '→' bold cyan)" "$(style "$command_str" bold)" >&2
+
+    if [[ "$do_dry_run" != "1" ]]; then
+        printf '\n      %s ' "$(style '确认恢复? [y/N]:' bold yellow)" >&2
+        local answer=""
+        read -r answer || answer=""
+        case "${answer,,}" in
+        y | yes) ;;
+        *) die "已取消" ;;
+        esac
+    fi
+
+    set +e
+    "${rsync_cmd[@]}"
+    local rc=$?
+    set -e
+
+    if [[ "$rc" == "0" ]]; then
+        print_section "撤销完成" success "状态:成功" "时间戳:$use_ts"
+    else
+        print_section "撤销完成" error "状态:失败" "退出码:$rc"
+    fi
+    return "$rc"
+}
+
+# ---- df ----
+run_df() {
+    local target=$1
+    local host="" path=""
+    if is_remote_path "$target"; then
+        host="${target%%:*}"
+        path="${target#*:}"
+    else
+        df -h "$target"
+        return
+    fi
+
+    local remote_cmd
+    if [[ -n "$path" ]]; then
+        remote_cmd="df -h $(printf '%q' "$path")"
+    else
+        remote_cmd="df -h"
+    fi
+
+    printf '\n  %s %s\n\n' \
+        "$(style '→' bold cyan)" \
+        "$(style "ssh $host $remote_cmd" bold)" >&2
+    ssh "$host" "$remote_cmd"
+}
+
+# ---- du ----
+run_du() {
+    local target=$1
+    local top=${argc_top:-0}
+    local depth=${argc_depth:-1}
+
+    local host="" path=""
+    if is_remote_path "$target"; then
+        host="${target%%:*}"
+        path="${target#*:}"
+    else
+        path="${target/#\~/$HOME}"
+    fi
+    [[ -n "$path" ]] || die "请提供路径，如 rx du host:/var/log"
+
+    local remote_cmd
+    if [[ "$top" == "1" ]]; then
+        remote_cmd="du -h --max-depth=$depth $(printf '%q' "$path") 2>/dev/null | sort -h | tail -n 20"
+    else
+        remote_cmd="du -sh $(printf '%q' "$path")"
+    fi
+
+    if [[ -n "$host" ]]; then
+        printf '\n  %s %s\n\n' \
+            "$(style '→' bold cyan)" \
+            "$(style "ssh $host $remote_cmd" bold)" >&2
+        ssh "$host" "$remote_cmd"
+    else
+        printf '\n  %s %s\n\n' \
+            "$(style '→' bold cyan)" \
+            "$(style "$remote_cmd" bold)" >&2
+        bash -c "$remote_cmd"
+    fi
+}
+
+# ---- clean ----
+_clean_local_dir() {
+    local dir=$1 age_secs=$2 pattern=$3 dry_run=$4 label=$5
+    [[ -d "$dir" ]] || return 0
+
+    local now cutoff
+    now=$(date +%s)
+    cutoff=$((now - age_secs))
+
+    local -a to_remove=()
+    local f mtime
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        mtime=$(_file_mtime_epoch "$f")
+        ((mtime < cutoff)) && to_remove+=("$f")
+    done < <(find "$dir" -type f -name "$pattern" 2>/dev/null)
+
+    print_section "清理 $label" "" "目录:$dir" "匹配:${#to_remove[@]} 个"
+
+    local total=0
+    for f in "${to_remove[@]}"; do
+        local size
+        size=$(_file_size "$f")
+        total=$((total + size))
+        if ((dry_run == 0)); then
+            rm -f "$f"
+            printf '      删除: %s\n' "$f" >&2
+        else
+            printf '      [试运行] 将删除: %s\n' "$f" >&2
+        fi
+    done
+    printf '      释放: %s\n' "$(human_size "$total")" >&2
+}
+
+_clean_remote_backups() {
+    local target=$1 age_secs=$2 dry_run=$3
+    load_config
+    target=$(resolve_profile "$target")
+
+    local host="" path="" is_remote=0
+    if is_remote_path "$target"; then
+        is_remote=1
+        host="${target%%:*}"
+        path="${target#*:}"
+    else
+        path="${target/#\~/$HOME}"
+    fi
+    [[ -n "$path" ]] || die "请提供目标路径"
+    path="${path%/}"
+    local backup_base="$path/.rx-backup"
+
+    local listing
+    if [[ "$is_remote" == "1" ]]; then
+        listing=$(ssh "$host" "ls -1 $(printf '%q' "$backup_base") 2>/dev/null" || true)
+    else
+        listing=$(ls -1 "$backup_base" 2>/dev/null || true)
+    fi
+
+    local now cutoff
+    now=$(date +%s)
+    cutoff=$((now - age_secs))
+
+    local -a to_remove=()
+    local entry
+    while IFS= read -r entry; do
+        [[ -n "$entry" ]] || continue
+        if [[ "$entry" =~ ^([0-9]{8})-([0-9]{6}) ]]; then
+            local d="${BASH_REMATCH[1]}"
+            local t="${BASH_REMATCH[2]}"
+            local ts_epoch
+            ts_epoch=$(date -d "${d:0:4}-${d:4:2}-${d:6:2} ${t:0:2}:${t:2:2}:${t:4:2}" +%s 2>/dev/null || echo 0)
+            if ((ts_epoch > 0 && ts_epoch < cutoff)); then
+                to_remove+=("$entry")
+            fi
+        fi
+    done <<<"$listing"
+
+    print_section "清理远端备份" "" \
+        "目标:$target" \
+        "目录:$backup_base" \
+        "匹配:${#to_remove[@]} 个"
+
+    for entry in "${to_remove[@]}"; do
+        if ((dry_run == 0)); then
+            if [[ "$is_remote" == "1" ]]; then
+                ssh "$host" "rm -rf $(printf '%q' "$backup_base/$entry")"
+            else
+                rm -rf "$backup_base/$entry"
+            fi
+            printf '      删除: %s\n' "$entry" >&2
+        else
+            printf '      [试运行] 将删除: %s\n' "$entry" >&2
+        fi
+    done
+}
+
+run_clean() {
+    local dry_run=1
+    [[ "${argc_yes:-0}" == "1" ]] && dry_run=0
+
+    local did_any=0
+
+    if [[ -n "${argc_logs:-}" ]]; then
+        local secs
+        secs=$(_parse_age_seconds "$argc_logs") || die "无法解析时间: $argc_logs（示例 30d）"
+        _clean_local_dir "$RX_LOG_DIR" "$secs" "*.log" "$dry_run" "本地 rx 日志"
+        did_any=1
+    fi
+
+    if [[ -n "${argc_remote_logs:-}" ]]; then
+        local secs
+        secs=$(_parse_age_seconds "$argc_remote_logs") || die "无法解析时间: $argc_remote_logs"
+        _clean_local_dir "$RX_REMOTE_LOG_DIR" "$secs" "*.log" "$dry_run" "rlog 保存的日志"
+        did_any=1
+    fi
+
+    if [[ -n "${argc_backup_target:-}" || -n "${argc_backup_age:-}" ]]; then
+        [[ -n "${argc_backup_target:-}" && -n "${argc_backup_age:-}" ]] ||
+            die "--backup-target 与 --backup-age 需要同时提供"
+        local secs
+        secs=$(_parse_age_seconds "$argc_backup_age") || die "无法解析时间: $argc_backup_age"
+        _clean_remote_backups "$argc_backup_target" "$secs" "$dry_run"
+        did_any=1
+    fi
+
+    if [[ "$did_any" == "0" ]]; then
+        print_section "清理" warning \
+            "结果:未指定任何清理目标" \
+            "示例:rx clean --logs 30d" \
+            "示例:rx clean --backup-target host:/var/www --backup-age 7d"
+        return 0
+    fi
+
+    if [[ "$dry_run" == "1" ]]; then
+        printf '\n      提示: 加 --yes 才会真正删除\n' >&2
+    fi
+}
+
+# ---- profiles ----
+_profile_write() {
+    local name=$1 p=$2
+    local config=$RX_CONFIG_PATH
+    mkdir -p "$(dirname "$config")"
+
+    local tmp
+    tmp=$(mktemp)
+
+    if [[ -f "$config" ]]; then
+        cp "$config" "$config.bak"
+        local in_target=0 replaced=0 line
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^\[profiles\.([^]]+)\]$ ]]; then
+                if [[ "${BASH_REMATCH[1]}" == "$name" ]]; then
+                    in_target=1
+                    printf '%s\n' "$line" >>"$tmp"
+                    continue
+                else
+                    in_target=0
+                fi
+            elif [[ "$in_target" == "1" && "$line" =~ ^path[[:space:]]*= ]]; then
+                printf 'path = "%s"\n' "$p" >>"$tmp"
+                replaced=1
+                continue
+            fi
+            printf '%s\n' "$line" >>"$tmp"
+        done <"$config"
+
+        if [[ "$replaced" == "0" ]]; then
+            printf '\n[profiles.%s]\npath = "%s"\n' "$name" "$p" >>"$tmp"
+        fi
+    else
+        printf '# rx profiles\n\n[profiles.%s]\npath = "%s"\n' "$name" "$p" >"$tmp"
+    fi
+
+    mv "$tmp" "$config"
+}
+
+_profile_remove() {
+    local name=$1
+    local config=$RX_CONFIG_PATH
+    [[ -f "$config" ]] || return 0
+
+    cp "$config" "$config.bak"
+    local tmp
+    tmp=$(mktemp)
+    local in_target=0 line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^\[profiles\.([^]]+)\]$ ]]; then
+            if [[ "${BASH_REMATCH[1]}" == "$name" ]]; then
+                in_target=1
+                continue
+            else
+                in_target=0
+            fi
+        fi
+        [[ "$in_target" == "1" ]] && continue
+        printf '%s\n' "$line" >>"$tmp"
+    done <"$config"
+    mv "$tmp" "$config"
+}
+
+run_profiles() {
+    local action=${argc_action:-list}
+    local name=${argc_name:-}
+    local p=${argc_path:-}
+
+    load_config
+
+    case "$action" in
+    list)
+        if ((${#RX_PROFILES[@]} == 0)); then
+            print_section "profiles" "" \
+                "配置:$RX_CONFIG_PATH" \
+                "结果:暂无 profile"
+            printf '\n      提示: rx profiles add <名称> <路径>\n' >&2
+            return 0
+        fi
+        print_section "profiles" "" \
+            "配置:$RX_CONFIG_PATH" \
+            "数量:${#RX_PROFILES[@]}"
+        local n
+        while IFS= read -r n; do
+            printf '      %s %s\n' \
+                "$(style "$(_pad "@$n" 16)" bold)" \
+                "${RX_PROFILES[$n]}" >&2
+        done < <(printf '%s\n' "${!RX_PROFILES[@]}" | sort)
+        ;;
+    show)
+        [[ -n "$name" ]] || die "用法: rx profiles show <名称>"
+        [[ -n "${RX_PROFILES[$name]:-}" ]] || die "未找到 profile: $name"
+        print_section "profile @$name" "" \
+            "名称:@$name" \
+            "路径:${RX_PROFILES[$name]}" \
+            "配置:$RX_CONFIG_PATH"
+        ;;
+    add)
+        [[ -n "$name" ]] || die "用法: rx profiles add <名称> <路径>"
+        [[ -n "$p" ]] || die "缺少路径"
+        [[ "$name" =~ ^[a-zA-Z0-9_.-]+$ ]] || die "名称只能包含字母、数字、_ . -"
+
+        local existed=0
+        [[ -n "${RX_PROFILES[$name]:-}" ]] && existed=1
+
+        _profile_write "$name" "$p"
+
+        if [[ "$existed" == "1" ]]; then
+            print_section "profile 已更新" success \
+                "名称:@$name" "路径:$p" "配置:$RX_CONFIG_PATH"
+        else
+            print_section "profile 已添加" success \
+                "名称:@$name" "路径:$p" "配置:$RX_CONFIG_PATH"
+        fi
+        printf '      旧文件已备份到: %s.bak\n' "$RX_CONFIG_PATH" >&2
+        ;;
+    rm)
+        [[ -n "$name" ]] || die "用法: rx profiles rm <名称>"
+        [[ -n "${RX_PROFILES[$name]:-}" ]] || die "未找到 profile: $name"
+        _profile_remove "$name"
+        print_section "profile 已删除" success \
+            "名称:@$name" "配置:$RX_CONFIG_PATH"
+        printf '      旧文件已备份到: %s.bak\n' "$RX_CONFIG_PATH" >&2
+        ;;
+    edit)
+        [[ -f "$RX_CONFIG_PATH" ]] || {
+            mkdir -p "$(dirname "$RX_CONFIG_PATH")"
+            printf '# rx profiles\n\n' >"$RX_CONFIG_PATH"
+        }
+        "${EDITOR:-vi}" "$RX_CONFIG_PATH"
+        ;;
+    path)
+        printf '%s\n' "$RX_CONFIG_PATH"
+        ;;
+    *)
+        die "未知操作: $action（可用: list, show, add, rm, edit, path）"
+        ;;
+    esac
+}
+
+# ---- doctor ----
+run_doctor() {
+    local -a rows=()
+    local ok=1
+
+    local rsync_path
+    if rsync_path=$(command -v rsync); then
+        rows+=("rsync:$rsync_path")
+    else
+        ok=0
+        rows+=("rsync:缺失")
+    fi
+
+    local tmux_path
+    tmux_path=$(command -v tmux || true)
+    rows+=("tmux:${tmux_path:-未安装（仅 --bg 依赖）}")
+
+    local ssh_path
+    ssh_path=$(command -v ssh || true)
+    rows+=("ssh:${ssh_path:-未安装（rlog / df / du / undo 依赖）}")
+
+    if [[ -f "$RX_CONFIG_PATH" ]]; then
+        load_config
+        rows+=("配置:已载入 ${#RX_PROFILES[@]} 个 profile，来自 $RX_CONFIG_PATH")
+    else
+        rows+=("配置:未找到（可选，$RX_CONFIG_PATH）")
+    fi
+
+    local log_parent
+    log_parent=$(dirname "$RX_LOG_DIR")
+    while [[ ! -d "$log_parent" && "$log_parent" != "/" ]]; do
+        log_parent=$(dirname "$log_parent")
+    done
+    if [[ -d "$RX_LOG_DIR" && -w "$RX_LOG_DIR" ]]; then
+        rows+=("日志:可写 $RX_LOG_DIR")
+    elif [[ -w "$log_parent" ]]; then
+        rows+=("日志:可创建 $RX_LOG_DIR")
+    else
+        ok=0
+        rows+=("日志:不可写 $RX_LOG_DIR")
+    fi
+
+    local status="success"
+    [[ "$ok" != "1" ]] && status="error"
+    print_section "自检" "$status" "${rows[@]}"
+    [[ "$ok" == "1" ]]
+}
+
+# ============================================================
+# 子命令定义
+# ============================================================
+# @cmd 上传本地路径到远端
+# @alias p
+# @arg local! 要上传的本地文件或目录
+# @arg remote! 远端目标，例如 host:/tmp/
+# @flag -n --dry-run 只预览，不实际复制文件
+# @flag --delete 删除源端已不存在的目标文件
+# @flag --backup 覆盖或删除前把旧文件移到 .rx-backup/<时间戳>/
+# @option --limit <RATE> 限速，例如 10m
+# @option -x --exclude* <PATTERN> 排除匹配的文件
+# @flag --bg 放到 tmux 后台执行
+# @flag --plan 只打印命令和安全摘要
+put() { run_transfer put "$argc_local" "$argc_remote"; }
+
+# @cmd 快速上传，自动备份被覆盖的文件
+# @alias u
+# @arg local! 要上传的本地文件或目录
+# @arg remote! 远端目标
+# @flag -n --dry-run 只预览，不实际复制文件
+# @flag --delete 删除源端已不存在的目标文件
+# @option --limit <RATE> 限速，例如 10m
+# @option -x --exclude* <PATTERN> 排除匹配的文件
+# @flag --bg 放到 tmux 后台执行
+# @flag --plan 只打印命令和安全摘要
+up() {
+    RX_FORCE_BACKUP=1
+    run_transfer up "$argc_local" "$argc_remote"
+}
+
+# @cmd 下载远端路径到本地
+# @alias g
+# @arg remote! 远端源
+# @arg local! 本地目标路径
+# @flag -n --dry-run 只预览，不实际复制文件
+# @flag --delete 删除源端已不存在的目标文件
+# @flag --backup 覆盖或删除前把旧文件移到 .rx-backup/<时间戳>/
+# @option --limit <RATE> 限速，例如 10m
+# @option -x --exclude* <PATTERN> 排除匹配的文件
+# @flag --bg 放到 tmux 后台执行
+# @flag --plan 只打印命令和安全摘要
+get() { run_transfer get "$argc_remote" "$argc_local"; }
+
+# @cmd 同步源路径到目标路径
+# @alias s
+# @arg source! 源路径
+# @arg destination! 目标路径
+# @flag -n --dry-run 只预览，不实际复制文件
+# @flag --delete 删除源端已不存在的目标文件
+# @flag --backup 覆盖或删除前把旧文件移到 .rx-backup/<时间戳>/
+# @option --limit <RATE> 限速，例如 10m
+# @option -x --exclude* <PATTERN> 排除匹配的文件
+# @flag --bg 放到 tmux 后台执行
+# @flag --plan 只打印命令和安全摘要
+sync() { run_transfer sync "$argc_source" "$argc_destination"; }
+
+# @cmd 在远端执行命令或脚本
+# @alias r
+# @arg target! 目标，格式 host:脚本路径、host:命令，或仅 host（配合 --stdin）
+# @arg args* 传给远端命令或脚本的参数
+# @flag --sudo 使用 sudo 执行
+# @flag --stdin 从标准输入读取脚本内容并用 bash 执行
+# @option --cwd <DIR> 执行前先 cd 到该目录
+# @option --env* <KEY=VALUE> 设置环境变量（可多次）
+# @flag --tty 分配 tty，用于交互式命令
+# @flag -n --dry-run 只打印命令，不实际执行
+run() { run_remote "$argc_target" "${argc_args[@]}"; }
+
+# @cmd 从备份恢复被覆盖的文件
+# @alias un
+# @arg target! 目标路径，如 host:/var/www/app/ 或 @profile
+# @flag --list 列出可用的备份时间戳
+# @option --ts <TIMESTAMP> 指定备份时间戳，默认用最新的
+# @flag -n --dry-run 只预览，不实际执行
+undo() { run_undo "$argc_target"; }
+
+# @cmd 查看远端磁盘使用情况
+# @alias f
+# @arg target! 目标，如 host:（整体）或 host:/var/log
+df() { run_df "$argc_target"; }
+
+# @cmd 查看远端目录大小
+# @arg target! 目标路径，如 host:/var/log
+# @option --depth <N> 子目录层级，默认 1
+# @flag --top 列出子目录并排序显示前 20 个
+du() { run_du "$argc_target"; }
+
+# @cmd 清理旧日志和旧备份（默认试运行，--yes 才真删）
+# @option --logs <AGE> 清理本地 rx 日志，如 30d
+# @option --remote-logs <AGE> 清理 rlog --save 保存的日志，如 14d
+# @option --backup-target <TARGET> 远端备份目标，如 host:/var/www
+# @option --backup-age <AGE> 备份保留时间，如 7d
+# @flag --yes 真正执行删除（不加则只试运行）
+clean() { run_clean; }
+
+# @cmd 查看或管理 profile
+# @alias pf
+# @arg action![list|show|add|rm|edit|path] 操作，默认 list
+# @arg name 名称（show / add / rm 需要）
+# @arg path 路径（add 需要）
+profiles() { run_profiles; }
+
+# @cmd 查看远端主机上的日志文件
+# @alias rl
+# @arg target! 目标文件，如 host:/var/log/app.log
+# @option -n --lines <N> 显示末尾行数，默认 60
+# @flag -f --follow 持续跟踪输出
+# @option -g --grep <PATTERN> 只显示匹配的行（正则）
+# @flag -s --save 同时保存到 ~/.local/state/rx/remote-logs/
+rlog() { run_rlog "$argc_target"; }
+
+# @cmd 列出最近的 rx 日志
+# @option -n --limit <N> 显示的条数
+# @flag --path 只打印日志路径
+logs() { run_logs; }
+
+# @cmd 显示最新一条 rx 日志
+# @flag --path 只打印最新日志路径
+# @option --tail [LINES] 打印末尾若干行，默认 60
+last() { run_last; }
+
+# @cmd 检查本地 rx 运行环境
+doctor() { run_doctor; }
+
+# ============================================================
+# 入口
+# ============================================================
+main() {
+    if ! command -v argc >/dev/null 2>&1; then
+        printf 'rx: 找不到 argc。请先安装：https://github.com/sigoden/argc\n' >&2
+        exit 100
+    fi
+    set +u
+    eval "$(argc --argc-eval "$0" "$@")"
+}
+
+main "$@"

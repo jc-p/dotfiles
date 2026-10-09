@@ -29,8 +29,16 @@
 	untrackedcache = true
 	excludesfile = ~/.gitignore_global
 [delta]
-	features = decorations line-numbers
-	side-by-side = true
+	# 默认上下对比，避免窄窗口将长行拆成左右两栏。
+	line-numbers = true
+	side-by-side = false
+	keep-plus-minus-markers = true
+	minus-style = syntax auto
+	plus-style = syntax auto
+	minus-emph-style = syntax bold auto
+	plus-emph-style = syntax bold auto
+	file-style = yellow bold
+	file-decoration-style = yellow ul
 	navigate = true
 	dark = true
 [interactive]

@@ -22,6 +22,9 @@ done
 for file in scripts/bootstrap.sh scripts/check.sh; do
   bash -n "$file"
 done
+for file in dot_local/bin/executable_gx dot_local/bin/executable_omc-build dot_local/bin/executable_rx; do
+  bash -n "$file"
+done
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck scripts/bootstrap.sh scripts/check.sh
 fi
@@ -45,7 +48,7 @@ rendered = subprocess.run(
      'dot_config/starship.toml.tmpl'], capture_output=True, text=True, check=True,
 )
 tomllib.loads(rendered.stdout)
-for path in [Path('dot_config/zsh/replace.py'), *Path('scripts').glob('test_*.py')]:
+for path in [Path('dot_config/zsh/replace.py'), Path('dot_local/bin/executable_sx'), *Path('scripts').glob('test_*.py')]:
     ast.parse(path.read_text(), filename=str(path))
 print('TOML 与 Python 语法检查通过')
 PY
@@ -53,4 +56,5 @@ zsh -f scripts/test-functions.zsh
 "$python_bin" scripts/test_replace.py
 "$python_bin" scripts/test_config.py
 "$python_bin" scripts/test_migration.py
+"$python_bin" scripts/test_tools.py
 printf '配置与函数检查通过\n'

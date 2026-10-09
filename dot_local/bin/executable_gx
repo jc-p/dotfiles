@@ -1,0 +1,601 @@
+#!/usr/bin/env bash
+# gx - Git 工作流薄封装
+# @describe Git 工作流：分支 / worktree / 日志 / 差异 / stash / cherry-pick
+# @meta combine-shorts
+
+set -euo pipefail
+
+REMOTE="${GIT_REMOTE:-origin}"
+EDITOR_CMD="${EDITOR_CMD:-code}"
+WT_ROOT="${WT_ROOT:-$HOME/work/worktrees}"
+
+die()  { echo "错误: $*" >&2; exit 1; }
+info() { echo "→ $*"; }
+need_repo() { git rev-parse --git-dir >/dev/null 2>&1 || die "当前目录不是 git 仓库"; }
+repo_root() { git rev-parse --show-toplevel; }
+repo_name() { basename "$(repo_root)"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+default_base() {
+  local b
+  for b in main master develop; do
+    git show-ref --verify --quiet "refs/heads/$b" && { echo "$b"; return; }
+  done
+  git branch --show-current
+}
+
+pick_base() {
+  local b
+  for b in main master develop; do
+    git show-ref --verify --quiet "refs/heads/$b" && { echo "$b"; return; }
+    git show-ref --verify --quiet "refs/remotes/$REMOTE/$b" && { echo "$REMOTE/$b"; return; }
+  done
+}
+
+wt_branches() {
+  git worktree list --porcelain | awk '/^branch / { sub("refs/heads/", "", $2); print $2 }'
+}
+
+wt_path_for_branch() {
+  git worktree list --porcelain | awk -v b="refs/heads/$1" '
+    /^worktree / { p=$2 }
+    /^branch / && $2==b { print p; exit }'
+}
+
+fetch_remote() {
+  git remote get-url "$REMOTE" >/dev/null 2>&1 || { info "无远程 $REMOTE"; return; }
+  info "fetch $REMOTE --prune"
+  git fetch --prune "$REMOTE"
+}
+
+open_editor() {
+  if have "$EDITOR_CMD"; then
+    "$EDITOR_CMD" -n "$1"
+  else
+    echo "未找到 $EDITOR_CMD，路径: $1"
+  fi
+}
+
+pick_branch() {
+  local prompt="${1:-选分支}"
+  have fzf || die "需要 fzf 才能交互选分支"
+  git for-each-ref --format='%(refname:short)' refs/heads \
+    | fzf --prompt="$prompt > " --height=40% --reverse
+}
+
+# ============ 切分支 / worktree ============
+
+# @cmd 交互式选择（worktree + 本地分支）
+go() {
+  need_repo
+  have fzf || die "需要 fzf: brew install fzf"
+
+  local sel
+  sel=$(
+    {
+      git worktree list --porcelain | awk '
+        function flush() {
+          if (wt == "") return
+          if (detached) {
+            printf "[WT] (%s)\t%s\n", substr(head,1,8), wt
+          } else if (br != "") {
+            sub("refs/heads/","",br)
+            printf "[WT] %s\t%s\n", br, wt
+          } else {
+            printf "[WT] (?)\t%s\n", wt
+          }
+          wt=""; br=""; head=""; detached=0
+        }
+        /^worktree / { flush(); wt=$2 }
+        /^HEAD /     { head=$2 }
+        /^branch /   { br=$2 }
+        /^detached/  { detached=1 }
+        END          { flush() }
+      '
+      git for-each-ref --format='[BR] %(refname:short)%09' refs/heads
+    } | fzf --delimiter='\t' --with-nth=1 --prompt='切到 > ' \
+            --height=50% --reverse \
+            --preview 'git -C {2} status --short 2>/dev/null | head -30; echo "---"; git -C {2} log -1 --format="%h %cr %s" 2>/dev/null' \
+            --preview-window=right:55%
+  ) || return 0
+  [[ -n "$sel" ]] || return 0
+
+  local label="${sel%%$'\t'*}"
+  local target="${sel#*$'\t'}"
+  local branch="${label#*] }"
+
+  if [[ "$label" == "[WT]"* ]]; then
+    info "打开 worktree: $target"
+    open_editor "$target"
+    return
+  fi
+
+  local wtp
+  wtp="$(wt_path_for_branch "$branch" || true)"
+  if [[ -n "$wtp" ]]; then
+    info "分支 $branch 在 worktree，打开编辑器"
+    open_editor "$wtp"
+  else
+    info "checkout $branch"
+    git checkout "$branch"
+  fi
+}
+
+# @cmd 切到分支；若该分支在 worktree 中则打开编辑器
+# @arg branch 分支名
+# @flag --all-branches 交互选择本地及远端分支，兼容原 fbr
+co() {
+  need_repo
+  if [[ "${argc_all_branches:-}" == "1" ]]; then
+    local branch
+    branch=$(git branch -a | sed 's/^[* ] //; s#remotes/origin/##' | grep -v HEAD | sort -u | fzf) || return
+    [[ -n "$branch" ]] && git checkout "$branch"
+    return
+  fi
+  [[ -n "${argc_branch:-}" ]] || { go; return; }
+  local wtp
+  wtp="$(wt_path_for_branch "$argc_branch" || true)"
+  if [[ -n "$wtp" ]]; then
+    info "分支 $argc_branch 在 worktree，打开编辑器"
+    open_editor "$wtp"
+  else
+    git checkout "$argc_branch"
+  fi
+}
+
+# ============ worktree ============
+
+# @cmd 新建 worktree（默认 fetch + 基于 origin/base）
+# @arg branch! 新分支或已存在的分支
+# @arg base 新建分支时的起点，默认当前分支
+new() {
+  need_repo
+
+  local branch="${argc_branch:-}"
+  local base="${argc_base:-}"
+  [[ -n "$branch" ]] || die "必须提供分支名"
+
+  local root="${WT_ROOT:-$(dirname "$(repo_root)")}"
+  local path="${root}/$(repo_name)-${branch//\//-}"
+
+  if [[ -e "$path" ]]; then
+    info "已存在，直接打开: $path"
+    open_editor "$path"; return
+  fi
+
+  fetch_remote
+
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    info "本地分支已存在，检出到 worktree"
+    git worktree add "$path" "$branch"
+  else
+    local base_ref="HEAD"
+    if [[ -n "$base" ]]; then
+      if git show-ref --verify --quiet "refs/remotes/$REMOTE/$base"; then
+        base_ref="$REMOTE/$base"
+      else
+        base_ref="$base"
+      fi
+    fi
+    info "创建 ${branch}，基于 ${base_ref}"
+    git worktree add -b "$branch" "$path" "$base_ref"
+  fi
+
+  open_editor "$path"
+}
+
+# @cmd 删除 worktree
+# @arg branch 分支名；省略则 fzf 选
+# @flag --delete-branch 同时删除分支
+# @option --path <dir> 按路径删除（用于 detached worktree）
+rm() {
+  need_repo
+
+  local branch="${argc_branch:-}"
+  local path="${argc_path:-}"
+
+  # --path 模式
+  if [[ -n "$path" ]]; then
+    [[ -d "$path" ]] || die "路径不存在: $path"
+    path="$(cd "$path" && pwd)"
+    local wt_list
+    wt_list="$(git worktree list --porcelain | awk '/^worktree / { print $2 }')"
+    grep -qxF "$path" <<<"$wt_list" || die "不是本仓库的 worktree: $path"
+
+    local n
+    n=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$n" != "0" ]]; then
+      echo "警告: $path 有 $n 处未提交改动"
+      read -r -p "仍要删除? [y/N] " a
+      [[ "$a" == [yY] ]] || return 1
+    fi
+    git worktree remove "$path"
+    info "已删除 $path"
+    return
+  fi
+
+  # 无参：fzf 选（含 detached）
+  if [[ -z "$branch" ]]; then
+    have fzf || die "需要 fzf"
+    local sel
+    sel=$(git worktree list --porcelain | awk '
+      function flush() {
+        if (wt == "") return
+        if (br != "") { sub("refs/heads/","",br); printf "%s\t%s\n", br, wt }
+        else          { printf "(%s)\t%s\n", substr(head,1,8), wt }
+        wt=""; br=""; head=""
+      }
+      /^worktree / { flush(); wt=$2 }
+      /^HEAD /     { head=$2 }
+      /^branch /   { br=$2 }
+      END          { flush() }
+    ' | fzf --delimiter='\t' --with-nth=1 --prompt='删 worktree > ' --height=40% --reverse) || return 0
+    [[ -n "$sel" ]] || return 0
+    branch="${sel%%$'\t'*}"
+    path="${sel#*$'\t'}"
+  fi
+
+  [[ -z "$path" ]] && path="$(wt_path_for_branch "$branch" || true)"
+  [[ -n "$path" ]] || die "没有找到 worktree"
+
+  if [[ ! -d "$path" ]]; then
+    info "目录不存在，清理记录: $path"
+    git worktree prune -v
+    return
+  fi
+
+  if [[ -n "$(git -C "$path" status --porcelain 2>/dev/null || true)" ]]; then
+    echo "警告: $path 有未提交改动"
+    read -r -p "仍要删除? [y/N] " a
+    [[ "$a" == [yY] ]] || return 1
+  fi
+
+  git worktree remove "$path"
+  if [[ "${argc_delete_branch:-}" == "1" && "$branch" != "("*")" ]]; then
+    git branch -d "$branch" || true
+  fi
+  info "已删除 $path"
+}
+
+# @cmd 列出 worktree（含类型、状态、分支/detached、最后提交）
+# @alias list
+ls() {
+  need_repo
+  printf '%-9s %-11s %-34s %-28s %s\n' "TYPE" "STATE" "REF" "LAST COMMIT" "PATH"
+  printf '%-9s %-11s %-34s %-28s %s\n' "----" "-----" "---" "-----------" "----"
+
+  git worktree list --porcelain | awk '
+    function flush() {
+      if (wt == "") return
+      print wt "\t" br "\t" head "\t" detached "\t" prunable
+      wt=""; br=""; head=""; detached=0; prunable=0
+    }
+    /^worktree / { flush(); wt=$2 }
+    /^HEAD /     { head=substr($2,1,10) }
+    /^branch /   { sub("refs/heads/","",$2); br=$2 }
+    /^detached/  { detached=1 }
+    /^prunable/  { prunable=1 }
+    END          { flush() }
+  ' | while IFS=$'\t' read -r wt br head detached prunable; do
+    local type state ref last n subj when
+    if [[ "$prunable" == "1" ]]; then
+      type="prunable"
+    elif [[ "$detached" == "1" ]]; then
+      type="detached"
+    else
+      type="branch"
+    fi
+
+    if [[ "$type" == "prunable" || ! -d "$wt" ]]; then
+      state="missing"
+    else
+      n=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+      if [[ "$n" == "0" ]]; then state="clean"; else state="dirty($n)"; fi
+    fi
+
+    if [[ -n "$br" ]]; then
+      ref="$br"
+    else
+      ref="($head)"
+    fi
+
+    last=""
+    if [[ -d "$wt" ]]; then
+      when=$(git -C "$wt" log -1 --format='%cr' 2>/dev/null || echo "")
+      subj=$(git -C "$wt" log -1 --format='%s' 2>/dev/null | cut -c1-30 || echo "")
+      last="$when  $subj"
+    fi
+
+    printf '%-9s %-11s %-34s %-28s %s\n' "$type" "$state" "$ref" "$last" "$wt"
+  done
+}
+
+# ============ 清理 ============
+
+# @cmd 清理已合并分支 + gone 分支 + 失效 worktree
+# @flag --dry-run 只预览
+# @flag --force gone 分支未合并也强删
+clean() {
+  need_repo
+  local dry=0 force=0
+  [[ "${argc_dry_run:-}" == "1" ]] && dry=1
+  [[ "${argc_force:-}" == "1" ]] && force=1
+
+  fetch_remote 2>/dev/null || true
+
+  local base cur wtbs protected
+  base="$(default_base)"
+  cur="$(git branch --show-current)"
+  wtbs="$(wt_branches)"
+  protected="^(main|master|develop|${base}|${cur})$"
+
+  echo
+  echo "== 已合并到 $base 的本地分支 =="
+  while read -r b; do
+    [[ -z "$b" ]] && continue
+    [[ "$b" =~ $protected ]] && continue
+    grep -qxF "$b" <<<"$wtbs" && { echo "  跳过(worktree): $b"; continue; }
+    if [[ $dry -eq 1 ]]; then
+      echo "  [dry] 会删: $b"
+    else
+      git branch -d "$b" >/dev/null 2>&1 && echo "  已删: $b" || echo "  跳过(未合并): $b"
+    fi
+  done < <(git branch --merged "$base" --format='%(refname:short)')
+
+  echo
+  echo "== 远程已删除(gone)的本地分支 =="
+  while read -r b; do
+    [[ -z "$b" ]] && continue
+    [[ "$b" =~ $protected ]] && continue
+    grep -qxF "$b" <<<"$wtbs" && { echo "  跳过(worktree): $b"; continue; }
+    if [[ $dry -eq 1 ]]; then
+      echo "  [dry] 会删: $b"
+    elif [[ $force -eq 1 ]]; then
+      git branch -D "$b" >/dev/null && echo "  已删: $b"
+    else
+      git branch -d "$b" >/dev/null 2>&1 && echo "  已删: $b" \
+        || echo "  跳过(未合并，加 --force 强删): $b"
+    fi
+  done < <(git branch -vv | awk '/: gone]/ { print $1 }')
+
+  echo
+  echo "== 失效的 worktree 记录 =="
+  if [[ $dry -eq 1 ]]; then
+    local n
+    n=$(git worktree list --porcelain | grep -c '^prunable' || true)
+    echo "  [dry] 跳过 prune（当前 $n 条失效记录）"
+  else
+    git worktree prune -v || true
+  fi
+}
+
+# ============ cherry-pick ============
+
+# @cmd cherry-pick：无参会 fzf 选，有 sha 直接 pick
+# @arg sha 提交哈希，可多个；省略则进入 fzf 交互
+# @option -a --author <name> 只看某作者的提交
+# @option -b --from <ref> 来源分支，默认当前分支独有提交
+# @flag -A --all 显示所有分支的提交
+# @option -t --to <branch> 目标分支，不传则用当前分支
+# @flag -i --interactive 交互式选择目标分支
+# @option -n --count <n> 候选条数，默认 200
+# @flag --push 完成后 push 到远程
+# @flag --no-fetch 跳过 fetch
+pick() {
+  need_repo
+  local author from count push no_fetch
+  author="${argc_author:-}"
+  from="${argc_from:-}"
+  count="${argc_count:-200}"
+  push="${argc_push:-}"
+  no_fetch="${argc_no_fetch:-}"
+
+  # 决定目标分支
+  local to=""
+  if [[ "${argc_interactive:-}" == "1" ]]; then
+    to="$(pick_branch "选目标分支")" || return 0
+    [[ -n "$to" ]] || die "未选目标分支"
+  elif [[ "${argc_to+set}" == "set" && -n "${argc_to:-}" ]]; then
+    to="$argc_to"
+  fi
+
+  [[ "$no_fetch" == "1" ]] || fetch_remote 2>/dev/null || true
+
+  # 解析目标 worktree
+  local target_path target_branch
+  if [[ -z "$to" ]]; then
+    target_path="$(pwd)"
+    target_branch="$(git branch --show-current || echo HEAD)"
+    [[ "$target_branch" != "HEAD" ]] || die "当前处于 detached HEAD，请用 -t 指定目标分支"
+  else
+    target_branch="$to"
+    target_path="$(wt_path_for_branch "$to" || true)"
+    if [[ -z "$target_path" ]]; then
+      if git show-ref --verify --quiet "refs/heads/$to"; then
+        die "分支 $to 存在但没有 worktree。先 'gx new $to' 建 worktree"
+      else
+        die "没有本地分支 $to"
+      fi
+    fi
+  fi
+
+  # 决定来源范围
+  local range source_label
+  if [[ -n "$from" ]]; then
+    range="$from"
+    source_label="$from"
+  elif [[ "${argc_all:-}" == "1" ]]; then
+    range="--all"
+    source_label="--all"
+  else
+    local base
+    base="$(pick_base)"
+    if [[ -n "$base" ]]; then
+      range="${base}..HEAD"
+      source_label="$range"
+    else
+      range="HEAD"
+      source_label="HEAD (未检测到 main/master/develop)"
+    fi
+  fi
+
+  # 位置参数不像 sha 就拦下
+  if [[ -n "${argc_sha:-}" ]]; then
+    for s in $argc_sha; do
+      [[ "$s" =~ ^[0-9a-fA-F]{4,40}$ ]] \
+        || die "'$s' 不像 commit sha。交互选请用 gx pick -i，指定目标用 -t <branch>"
+    done
+  fi
+
+  # 拿到要 pick 的 sha
+  local ordered
+  if [[ -n "${argc_sha:-}" ]]; then
+    ordered="$argc_sha"
+  else
+    have fzf || die "需要 fzf，或直接给 sha: gx pick <sha>"
+
+    local -a args=(
+      --pretty=format:'%h%x09%an%x09%ar%x09%s'
+      --no-merges
+      --max-count="$count"
+    )
+    if [[ "$range" == "--all" ]]; then
+      args+=(--all)
+    else
+      args+=("$range")
+    fi
+    [[ -n "$author" ]] && args+=(--author="$author")
+
+    local picks
+    picks=$(
+      git log "${args[@]}" \
+        | fzf --multi \
+              --delimiter='\t' --nth='2..' \
+              --prompt='pick > ' --height=80% --reverse \
+              --header="来源: $source_label | 目标: $target_branch | Tab 多选, Enter 确认" \
+              --preview 'git show --color=always --stat {1}' \
+              --preview-window=right:60% \
+        | awk -F'\t' '{print $1}'
+    ) || return 0
+
+    [[ -n "$picks" ]] || return 0
+    ordered=$(git rev-list --no-walk=sorted --reverse $picks)
+  fi
+
+  echo "→ 来源: $source_label"
+  echo "→ 目标: $target_branch ($target_path)"
+  echo "→ cherry-pick:"
+  echo "$ordered" | sed 's/^/  /'
+  read -r -p "继续? [y/N] " a
+  [[ "$a" == [yY] ]] || return 1
+
+  # shellcheck disable=SC2086
+  git -C "$target_path" cherry-pick $ordered
+
+  if [[ "$push" == "1" ]]; then
+    git -C "$target_path" push -u "$REMOTE" HEAD
+  fi
+}
+
+# ============ 日志 ============
+
+# @cmd fzf 选 commit → 预览 → 打印哈希
+# @arg keyword 提交信息关键词
+# @option -a --author <name> 按作者过滤
+# @option -n --count <n> 显示条数，默认 50
+# @flag --all 搜索所有分支
+log() {
+  need_repo
+  local author msg count range
+  author="${argc_author:-}"
+  msg="${argc_keyword:-}"
+  count="${argc_count:-50}"
+  range=""
+  [[ "${argc_all:-}" == "1" ]] && range="--all"
+
+  local -a args=(
+    --pretty=format:'%h%x09%an%x09%ar%x09%s'
+    --no-merges
+    --max-count="$count"
+  )
+  [[ -n "$range"  ]] && args+=("$range")
+  [[ -n "$author" ]] && args+=(--author="$author")
+  [[ -n "$msg"    ]] && args+=(--grep="$msg" -i)
+
+  if have fzf && [[ -t 1 ]]; then
+    git log "${args[@]}" \
+      | fzf --delimiter='\t' --nth='2..' \
+            --prompt='提交 > ' --height=80% --reverse \
+            --header='输入即过滤：作者 / 时间 / 信息' \
+            --preview 'git show --color=always --stat {1}' \
+            --preview-window=right:60% \
+      | awk -F'\t' '{print $1}'
+  else
+    git log "${args[@]}"
+  fi
+}
+
+# 使用 EDITOR 的命令与参数打开文件，不执行其中的 shell 表达式。
+edit_file() {
+  python3 - "$1" <<'PY'
+import os
+import shlex
+import subprocess
+import sys
+try:
+    editor = shlex.split(os.environ.get("EDITOR", "vim"))
+    if not editor:
+        raise ValueError("EDITOR 不能为空")
+    raise SystemExit(subprocess.call([*editor, sys.argv[1]]))
+except (OSError, ValueError) as error:
+    print(f"gx: 无法打开编辑器：{error}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+# @cmd 查看提交；无参数时交互选择并展示，原 log 的哈希输出保持不变
+# @arg commit 提交号或引用
+show() {
+  need_repo
+  local commit="${argc_commit:-}"
+  if [[ -z "$commit" ]]; then
+    have fzf || die "需要 fzf 才能交互选择提交"
+    commit=$(git log --oneline --color=always | fzf --ansi --height=90% --layout=reverse \
+      --preview 'git show --color=always {1} | head -n 200' --preview-window='right:60%') || return
+    commit="${commit%% *}"
+  fi
+  [[ -n "$commit" ]] || return 1
+  commit=$(git rev-parse --verify --end-of-options "${commit}^{commit}") || return
+  git show "$commit"
+}
+
+# @cmd 选择变更文件并查看差异；可用 --edit 打开编辑器
+# @flag --cached 查看暂存区，默认工作区
+# @flag --edit 打开编辑器，兼容原 fgd
+diff() {
+  need_repo
+  have fzf || die "需要 fzf 才能选择变更文件"
+  local -a args=(diff)
+  local file preview='git diff --color=always -- {} | head -n 200'
+  if [[ "${argc_cached:-}" == "1" ]]; then
+    args+=(--cached)
+    preview='git diff --cached --color=always -- {} | head -n 200'
+  fi
+  file=$(git "${args[@]}" --name-only | fzf --height=90% --layout=reverse \
+    --preview "$preview" --preview-window='right:60%') || return
+  [[ -n "$file" ]] || return 1
+  if [[ "${argc_edit:-}" == "1" ]]; then edit_file "$file"; else git "${args[@]}" -- "$file"; fi
+}
+
+# @cmd 交互选择 stash 并恢复到工作区，会修改文件并尝试移除该 stash
+stash() {
+  need_repo
+  have fzf || die "需要 fzf 才能选择 stash"
+  local selected
+  selected=$(git stash list | fzf | cut -d: -f1) || return
+  [[ -n "$selected" ]] || return 1
+  git stash pop "$selected"
+}
+
+have argc || die "缺少 argc，请显式运行 dotfiles 的 scripts/bootstrap.sh 安装依赖"
+eval "$(argc --argc-eval "$0" "$@")"

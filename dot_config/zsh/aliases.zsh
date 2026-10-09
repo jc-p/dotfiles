@@ -24,9 +24,16 @@ if command -v bat &>/dev/null; then
 fi
 
 # --- 基础 ---
-alias c='clear'
+# 本模块在 OMZ 之后加载，清退插件可能带回的重复入口；本机仍可最后覆盖。
+for legacy_alias in c reload gpl; do
+  if (( $+aliases[$legacy_alias] )); then
+    unalias "$legacy_alias"
+  fi
+done
+unset legacy_alias
+alias cls='clear'
 alias h='history'
-alias reload='source ~/.zshrc'
+alias szsh='source ~/.zshrc'
 alias df='df -h'
 alias ports='lsof -i -P -n | grep LISTEN'
 alias ..='cd ..'
@@ -48,7 +55,6 @@ alias gca='git commit --verbose --all'
 (( $+aliases[gd] )) || alias gd='git diff'
 alias gl='git pull'
 (( $+aliases[gp] )) || alias gp='git push'
-(( $+aliases[gpl] )) || alias gpl='git pull'
 (( $+aliases[gf] )) || alias gf='git fetch --all --prune'
 alias gst='git status'
 (( $+aliases[gstp] )) || alias gstp='git stash pop'
@@ -70,8 +76,6 @@ if command -v brew &>/dev/null; then
 fi
 
 # 从现有配置迁入的通用快捷方式。
-alias cls='clear'
-alias szsh='source ~/.zshrc'
 alias vprofile='vim ~/.zprofile'
 alias vzshenv='vim ~/.zshenv'
 alias vhosts='sudo vim /etc/hosts'
@@ -91,8 +95,6 @@ if command -v delta >/dev/null 2>&1; then
   alias gdc='git diff --cached'
   alias gds='git diff --stat'
 fi
-alias ..='cd ..'
-alias ...='cd ../..'
 alias d='dirs -v'
 alias cpath='pwd | pbcopy'
 alias pyrun='python3'

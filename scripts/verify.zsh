@@ -6,8 +6,12 @@ source_dir="${0:A:h:h}"
 cd "$source_dir" || exit 1
 export MISE_OFFLINE=1 MISE_AUTO_INSTALL=0
 
-for tool in chezmoi git delta jq rg fd bat eza fzf zoxide starship mise node python3 pnpm; do
+for tool in chezmoi git delta jq rg fd bat eza fzf zoxide starship mise node python3 pnpm bash argc rsync gx sx omc-build rx; do
   command -v "$tool" >/dev/null 2>&1 || { print -u2 "缺少核心工具: $tool"; exit 1; }
+done
+command bash -c '(( BASH_VERSINFO[0] >= 4 ))' || { print -u2 'rx 需要 Bash 4+，请检查 PATH'; exit 1; }
+for tool in gx sx omc-build rx; do
+  command "$tool" --help >/dev/null 2>&1 || { print -u2 "$tool 帮助入口失败"; exit 1; }
 done
 
 for tool in node python3 pnpm; do
@@ -30,6 +34,7 @@ ssh -G -F "$HOME/.ssh/config" example.invalid >/dev/null 2>&1 || { print -u2 'SS
 
 pending=$(chezmoi --source "$source_dir" status "$HOME/.zshrc" "$HOME/.config/zsh" \
   "$HOME/.config/mise" "$HOME/.config/starship.toml" "$HOME/.ripgreprc" \
-  "$HOME/.gitconfig" "$HOME/.ssh/config" "$HOME/.vimrc" "$HOME/.vim/plug-snapshot.vim") || exit 1
+  "$HOME/.gitconfig" "$HOME/.ssh/config" "$HOME/.vimrc" "$HOME/.vim/plug-snapshot.vim" \
+  "$HOME/.local/bin/gx" "$HOME/.local/bin/sx" "$HOME/.local/bin/omc-build" "$HOME/.local/bin/rx") || exit 1
 [[ -z "$pending" ]] || { print -u2 '通用配置仍有待同步项，请分模块预览并应用'; exit 1; }
 print '本机核心迁移验收通过；终端字体、交互快捷键和项目命令仍需人工验收。'

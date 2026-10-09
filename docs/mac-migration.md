@@ -14,7 +14,7 @@ bash "$dotfiles_source/scripts/bootstrap.sh"
 bash "$dotfiles_source/scripts/check.sh"
 ```
 
-安装脚本只在显式执行时下载：先安装 Brewfile，再用 Homebrew mise 安装源码声明的 Node 24、Python 3.12、pnpm 10，并生成 shims。检查离线运行；不要求先把配置应用到家目录。
+安装脚本只在显式执行时下载：先安装 Brewfile（含 Bash、argc、rsync），再用 Homebrew mise 安装源码声明的 Node 24、Python 3.12、pnpm 10，并生成 shims。检查离线运行；不要求先把配置应用到家目录。
 
 ## 2. 备份并准备本机文件
 
@@ -36,6 +36,8 @@ bash "$dotfiles_source/scripts/check.sh"
 chezmoi diff ~/.zshrc ~/.config/zsh ~/.ripgreprc
 chezmoi diff ~/.gitconfig ~/.ssh/config ~/.config/mise
 chezmoi diff ~/.vimrc ~/.vim/plug-snapshot.vim ~/.config/starship.toml
+mkdir -p "$HOME/.local/bin"
+chezmoi diff ~/.local/bin/gx ~/.local/bin/sx ~/.local/bin/omc-build ~/.local/bin/rx
 chezmoi --dry-run apply
 chezmoi apply
 zsh -li "$dotfiles_source/scripts/verify.zsh"
@@ -44,6 +46,8 @@ zsh -li "$dotfiles_source/scripts/verify.zsh"
 Git 四个核心缩写、rg 搜索规则、fzf、zoxide、提示符和 Vim 配置均来自仓库。Oh My Zsh 可选；最后用原生 mise shims 激活，项目配置仍可选择其他运行时版本。shims 不自动加载项目环境变量，这类命令用 `mise exec -- 命令` 执行。Vim 插件须按 README 显式安装，不随启动下载。
 
 ## 4. 按需准备工作环境
+
+`gx`、`sx`、`omc-build`、`rx` 由本仓库应用为可执行文件，不复制旧机器的 `~/.local/bin` 全集。`rx` 的 profile 和 SSH 配置私下筛选恢复；`omc-build` 仍需按项目准备 Java/Maven。已有 Zsh 补全系统时自动注册四个工具，可用 `--help` 和 Tab 查子命令。
 
 Java/Maven 的本机选择示例是 `examples/99-work.local.toml.example`。核对目标 Mac 架构、项目要求和完整版本后，将需要的配置合入本机 `conf.d/*.local.toml`，再显式运行 `mise install`。当前示例选择 Java 8 / Maven 3.6.3；ARM 安装与项目构建尚未验证。不要沿用旧机器 JAVA_HOME/MAVEN_HOME 的绝对路径。
 

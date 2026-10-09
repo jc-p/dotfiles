@@ -1,6 +1,23 @@
 # 命令速查
 
-一页纸速查。忘了命令翻这个。
+通用命令的统一查看入口。按“查看差异、找文件、切换版本”等场景查找，不要求记住所有缩写。本页覆盖主要场景；其余通用定义见 `dot_config/zsh/aliases.zsh`、`dot_config/zsh/functions.zsh` 和 `dot_gitconfig`。本机私有命令不汇入公开手册。
+
+## 怎么查
+
+用已有的 `less` 打开本页，输入 `/差异` 或 `/搜索` 查找，`n` 跳到下一处，`q` 退出：
+
+```bash
+less "$(chezmoi source-path)/docs/cheatsheet.md"
+```
+
+也可以直接按关键词查，或查看一个已知别名的展开内容：
+
+```bash
+rg -n -C 2 '差异' "$(chezmoi source-path)/docs/cheatsheet.md"
+alias gd
+```
+
+`alias gd` 查看当前 Shell 的定义，可能受插件和本机配置覆盖。查看工具自身的完整参数用 `git diff --help`、`rg --help` 等原生帮助。
 
 ## chezmoi
 
@@ -35,16 +52,19 @@
 | 搜历史命令 | `Ctrl+R` |
 | 搜历史（填入命令行） | `fh`，检查后回车执行 |
 | 搜 git log | `fgl` |
-| 搜未提交改动 | `fgd` |
+| 选择工作区变更文件并打开编辑器 | `fgd` |
 | 跳目录（zoxide） | `z 目录名` |
 | 跳目录（交互） | `fcd` |
 | 字面替换（预览后确认） | `replace 旧 新 [文件或目录...]` |
+
+搜索统一由 `sx` 实现，旧名称继续兼容：`ff` 找文件并返回路径，`fe` 打开编辑器，`fcode` 打开 VS Code；`fsearch`、`frg` 转调 `sx grep`，`rgv` 关闭预览，`frcode` 选择 VS Code。内容搜索的 rg 参数会转发，新实现默认排除依赖和构建目录，不再用冒号拆分文件路径。`rg`、`fd` 原生命令始终可用。
 
 ## Shell
 
 | 场景 | 命令 |
 |---|---|
-| 重载配置 | `reload` 或 `exec zsh` |
+| 清屏 | `cls` |
+| 重载配置 | `szsh`；删除旧别名或函数后，请打开新终端或用 `exec zsh` 启动新 Shell |
 | 编辑通用配置 | `vzsh` / `vza` / `vzf`，编辑后再应用 |
 | 编辑本机配置 | `vim ~/.config/zsh/local.zsh` |
 | mkdir + cd | `mkcd 目录名` |
@@ -56,23 +76,55 @@
 
 ## Git
 
-`gc` 是 `git commit --verbose`，`gca` 是 `git commit --verbose --all`，`gl` 是 `git pull`，`gst` 是 `git status`；不依赖 Oh My Zsh。其他已有缩写优先保留，本机可在 `local.zsh` 覆盖。
+原生命令始终可用；下面的缩写只用于减少输入。`gc`、`gca`、`gl`、`gst` 已固定为现有习惯，不依赖 Oh My Zsh；本机可在 `local.zsh` 覆盖。
 
-| 场景 | 命令 |
-|---|---|
-| 状态 | `gs` |
-| add | `ga` / `gaa` |
-| commit | `git commit -m "message"` |
-| commit amend | `git commit --amend --no-edit` |
-| checkout | `gco` |
-| 新分支 | `gcb 分支名` |
-| diff | `gd` |
-| log 图形 | `git log --oneline --graph --decorate --all` |
-| push | `gp` |
-| pull | `gpl` |
-| fetch prune | `gf` |
-| stash | `git stash` / `git stash pop` |
-| lazygit | `lg` |
+- 状态：`git status`（`gst`）；简略状态：`git status -sb`（`gs`）。
+- 暂存：`git add 文件`（`ga 文件`）；暂存所有改动：`git add --all`（`gaa`）。
+- 提交并显示差异：`git commit --verbose`（`gc`）；同时暂存已跟踪文件的改动并提交：`git commit --verbose --all`（`gca`，不自动添加新文件）。
+- 指定提交说明：`git commit -m "说明"`；修改上次提交：`git commit --amend --no-edit`（会改写上次提交）。
+- 切换分支：`git checkout 分支名`（`gco 分支名`）；新建分支：`git checkout -b 分支名`（`gcb 分支名`）。
+- 拉取：`git pull`（`gl`）；推送：`git push`（`gp`，更新远端）。
+- 获取并清理失效远端引用：`git fetch --all --prune`（`gf`）。
+- 日志图：`git log --oneline --graph --decorate --all`。
+- 暂存工作现场：`git stash`；恢复：`git stash pop`（会修改工作区）。
+- Git 界面：`lazygit`（安装后可用 `lg`）。注意 `lg` 与 `git lg` 不同，后者是 Git 配置中的日志图别名。
+
+### 查看差异（delta）
+
+delta 自动增强 Git 的差异显示，默认上下对比、新旧行号和 `+/-` 标记；删除行红色背景，新增行绿色背景，行内变化加粗并使用更深的背景。
+
+- 工作区差异：`git diff`（`gd`）。
+- 暂存区差异：`git diff --cached`（`gdc`）。
+- 文件变更统计：`git diff --stat`（`gds`）。
+- 查看一个提交：`git show 提交号`。
+- 只看指定文件：上述 diff 命令后追加 `-- 文件路径`。
+- 宽窗口临时分栏：`git -c delta.side-by-side=true diff -- 文件路径`；暂存区再加 `--cached`，不另设别名。
+- 长输出进入分页器后，`n`/`N` 跳到下一个/上一个文件，`/` 搜索，`q` 退出。
+- 分块暂存：`git add -p` 会修改暂存区，delta 只负责着色；输入 `q` 退出。
+
+当前配色适合深色终端。浅色终端可在 `~/.gitconfig.local` 的 `[delta]` 中设置 `dark = false`、`light = true`。若 `GIT_PAGER` 覆盖显示，可临时使用 `env -u GIT_PAGER -u PAGER git diff -- 文件路径`，不强制改写通用环境变量。
+
+## 独立工具
+
+四个自用工具由 dotfiles 管理源码和部署，依赖显式安装。每个工具用 `--help` 查完整用法；已有 Zsh 补全系统时，输入工具名后按 Tab 查看子命令。工作工具的私有配置仍独立留本机。
+
+- `gx`：Git 交互工作流。`gx show` 选提交并展示；`gx diff` 选工作区变更文件并显示差异，`--cached` 看暂存区、`--edit` 打开编辑器；`gx co --all-branches` 选分支，`gx stash` 选 stash 并恢复（会修改工作区）。原 `gx log` 保持不变。旧入口 `fbr/fgl/fgd/fstash` 分别转调对应子命令。
+- `sx`：文件和内容搜索，最常用的是 `sx files`、`sx files --edit`、`sx grep 关键词`。完整示例见下方。
+- `rx`：已确认常用；用于传输、远端执行、日志和备份恢复。先查 `rx --help`；具体参数查 `rx 子命令 --help`。传输和远端执行可能修改远端，查看帮助不会执行这些操作。
+- `omc-build`：OMC 编译、交付打包和依赖提取。先查 `omc-build --help`，提供 `build`、`patch`、`deps` 等子命令；构建命令会写入产物。
+- `go`：本机当前为 Go 开发工具，查 `go help` 或 `go help build` 等专题帮助；不与 Shell 快捷方式合并。
+
+```bash
+sx files                   # 选择文件，返回路径
+sx files --edit            # 选择后用 EDITOR 打开
+sx files --code            # 选择后用 VS Code 打开
+sx grep 关键词              # 查内容，选择后跳到编辑器匹配行
+sx grep --code 关键词       # 查内容，选择后用 VS Code 跳行
+sx grep --print 关键词      # 只返回 文件:行号，不打开编辑器
+sx grep -- -g '*.ts' 关键词 . # 转发原生 rg 选项，明确搜索当前目录
+```
+
+取消选择或无匹配返回非零，不打开编辑器。文件来源仍支持原 `ff` 的 `FZF_DEFAULT_COMMAND`；新 `sx files` 默认使用 fd。特殊路径中的制表符和换行暂不支持，工具会报错；此类文件请直接使用原生工具处理。
 
 ## Homebrew
 
@@ -130,3 +182,13 @@
 | 看磁盘 | `df -h` |
 | 复制路径 | `pwd \| pbcopy` |
 | 查找大文件 | `fd -t f -S +100M` |
+
+## 入口精简状态
+
+只删除已确认重复的通用封装。配置文件不能证明使用频率；未确认的入口继续保留，本机配置可最后覆盖。
+
+- 已确认保留：`cls`、`szsh`、`gl`、`rx` 和搜索功能；此前确认的 `gc`、`gca`、`gst` 及差异入口 `gd`、`gdc`、`gds` 保留。
+- 已删除重复入口：`c` → `cls`、`reload` → `szsh`、`gpl` → `gl`、`fshow` → `fgl`；`..`、`...` 各只声明一次。通用模块会清退 OMZ 带回的 `c`、`reload`、`gpl` 别名。
+- 兼容入口：搜索函数转调 `sx`，Git 交互函数转调 `gx`；旧名称保留，主体实现只有一份。
+- 未删除：`bi/bs/bl/bcu`、各 `rg` 缩写、`pyrun`、`fkill`；没有足够使用习惯证据继续精简。
+- 查询说明统一放在本页，不另建手册，不从历史命令或私有配置自动生成公开文档。

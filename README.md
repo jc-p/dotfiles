@@ -2,9 +2,11 @@
 
 使用 [chezmoi](https://chezmoi.io) 管理通用配置，本机配置独立保留。应用配置不安装软件；启动 Shell/Vim 不下载依赖。
 
+日常命令统一查 [命令速查](docs/cheatsheet.md)：按使用场景搜索，优先使用原生命令，已有缩写只是快捷方式。新增或调整通用命令时同步更新这份速查，不另建手册或帮助命令。
+
 ## 配置边界
 
-- 通用：Zsh 模块、rg 搜索规则、Starship、Git 默认行为、Vim、SSH 通用参数、mise 默认版本。
+- 通用：Zsh 模块、rg 搜索规则、Starship、Git 默认行为、Vim、SSH 通用参数、mise 默认版本，以及 `gx`、`sx`、`omc-build`、`rx` 源码。
 - 本机：工作目录、代理、私有服务、Git 身份和凭据助手、SSH 主机及密钥路径、机器工具版本。
 - `.gitignore` 排除本机源码文件，`.chezmoiignore` 按目标路径排除本机配置和仓库文档、示例、脚本；SSH 只管理通用 `config`。
 - `private_` 只设置文件权限，不加密；本仓库公开，不上传本机配置、凭据或密钥。
@@ -45,9 +47,15 @@ for item in .zshrc .ripgreprc .gitconfig .gitignore_global .vimrc .vim/plug-snap
     cp -Rp "$HOME/$item" "$backup_dir/$item"
   fi
 done
+for tool in gx sx omc-build rx; do
+  if [ -e "$HOME/.local/bin/$tool" ]; then
+    mkdir -p "$backup_dir/.local/bin"
+    cp -p "$HOME/.local/bin/$tool" "$backup_dir/.local/bin/$tool"
+  fi
+done
 ```
 
-显式安装通用依赖，包括 Git、delta、一种 Nerd Font，以及 mise 声明的 Node/Python/pnpm。安装脚本会下载软件；不复制旧机器的运行时目录。可选清单只包含额外 CLI，按需删减后安装。
+显式安装通用依赖，包括 Git、delta、Bash、argc、rsync、一种 Nerd Font，以及 mise 声明的 Node/Python/pnpm。安装脚本会下载软件；不复制旧机器的运行时目录。可选清单只包含额外 CLI，按需删减后安装。
 
 ```bash
 bash "$dotfiles_source/scripts/bootstrap.sh"
@@ -98,7 +106,17 @@ zsh -li "$dotfiles_source/scripts/verify.zsh"
 
 mise 的 `auto_install` 已关闭。通用默认工具为 Node 24、Python 3.12、pnpm 10；Rust、Java、Maven 按工作需要显式选择。本机版本放在 `99-machine.local.toml`，项目精确版本放入项目 `mise.toml`。启动末尾使用原生 `mise activate zsh --shims` 避免 Homebrew Node/pyenv 抢占选择；项目环境变量用 `mise exec -- 命令` 显式加载。新机重新安装，不能复制本机的 symlink 或安装目录。`replace` 需要 Python 3 和 rg。
 
-通用配置合入了现有 Starship 外观、Vim 快捷键及插件声明。`ff` 保留返回路径的行为，`fe` 打开编辑器，`fcode` 打开 VS Code；原有 `frg`、`frcode`、`y`、`pip` 等入口保留。
+通用配置合入了现有 Starship 外观、Vim 快捷键及插件声明。`ff` 保留返回路径的行为，`fe` 打开编辑器，`fcode` 打开 VS Code；原有 `frg`、`frcode`、`y`、`pip` 等入口保留。搜索入口转调 `sx`，Git 交互入口转调 `gx`，不再分别维护实现。
+
+## 工具维护
+
+`dot_local/bin/executable_*` 是四个自用工具的源码，由 chezmoi 部署为 `~/.local/bin/gx`、`sx`、`omc-build`、`rx`；本次以既有本机脚本为基线纳管。依赖在 Brewfile 和 mise 中声明，Java/Maven 按工作需要单独准备。`rx` 的 profile、SSH 主机和凭据仍留本机，不采集进仓库。
+
+- 修改工具用 `chezmoi edit ~/.local/bin/gx` 等入口，避免另建源码副本。
+- 新增能力直接维护对应工具的子命令、原生帮助和测试；日常用法统一放在命令速查。
+- 修改后先做对应工具检查，预览目标差异，再应用；提交和推送独立处理。
+- 已初始化 Zsh 补全系统时自动注册四个工具补全，可用 Tab 发现子命令；不额外执行 compinit，也不在启动时安装软件。
+- `gx log` 保持原有哈希输出；展示提交用 `gx show`。现有 `cls`、`szsh`、`gl` 等习惯保留。
 
 Vim 缺少 vim-plug 时只加载基础配置。保留 everforest、airline、NERDCommenter，补充搜索和 surround，共 9 个插件，全部固定 commit。需要插件时显式安装 vim-plug，再进入 Vim 执行 `:PlugInstall`；注册插件后才加载快照。启动时不会下载插件。
 
@@ -108,6 +126,8 @@ curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
 ```
 
 ## 日常同步与恢复
+
+Git 差异由 delta 自动增强，无须学习新的 diff 命令。显示方式、分页操作和按需分栏用法见 [查看差异](docs/cheatsheet.md#查看差异delta)。
 
 - 用 `chezmoi edit` 编辑通用配置；`vza`、`vzf` 分别定位别名和函数。
 - 本机差异直接编辑本机文件，不执行 `chezmoi add`。

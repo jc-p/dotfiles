@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 # ps/fzf/kill 使用测试替身；不查看真实进程、不发送信号、不执行历史命令。
 set -eu
+test_source_dir="${0:A:h:h}"
 source "${0:A:h:h}/dot_config/zsh/functions.zsh"
 
 [[ "$(whence -w fg)" == 'fg: builtin' ]]
@@ -34,6 +35,8 @@ read -r -z queued_command
 EDITOR="/usr/bin/printf '%s\\n'"
 [[ "$(_dotfiles_edit 'space name.txt')" == 'space name.txt' ]]
 FZF_DEFAULT_COMMAND="printf 'space name.txt\\n'"
+sx() { command python3 "$test_source_dir/dot_local/bin/executable_sx" "$@"; }
+export FZF_DEFAULT_OPTS='--filter="space name.txt"'
 [[ "$(ff)" == 'space name.txt' ]]
 alias gc='git commit --verbose'
 alias gst='git status'

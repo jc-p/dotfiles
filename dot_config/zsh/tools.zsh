@@ -30,3 +30,13 @@ fi
 if [[ -o interactive && -t 0 ]] && command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
 fi
+
+# 已有 Zsh 补全系统时注册工具补全，不安装依赖、不另外运行 compinit。
+if (( $+functions[compdef] )); then
+  if command -v argc >/dev/null 2>&1; then
+    source <(argc --argc-completions zsh gx omc-build rx)
+  fi
+  if command -v sx >/dev/null 2>&1; then
+    source <(sx --completions zsh)
+  fi
+fi

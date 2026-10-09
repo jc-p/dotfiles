@@ -1,0 +1,417 @@
+#!/bin/bash
+#
+# ARES-OMC 构建工具
+#
+# @option -j --jdk <PATH>                JDK 路径
+#
+# @cmd 编译模块
+# @alias b
+# @arg module*                           模块名（支持多个，空格分隔）
+# @option -p --profile <ENV>             构建环境
+# @option -k --keyword <KEY>             按关键字自动扫描相关模块
+# @flag  --am                            连带编译依赖模块
+# @flag  --with-tests                    不跳过测试
+build() {
+    _setup_env
+    local module
+    module=$(
+        IFS=,
+        echo "${argc_module[*]:-}"
+    )
+    local profile="${argc_profile:-}"
+    local keyword="${argc_keyword:-}"
+    local also_make="${argc_am:-}"
+    local skip_tests="true"
+    if [ -n "${argc_with_tests:-}" ]; then
+        skip_tests="false"
+    fi
+
+    local auto_mods
+    auto_mods=$(_resolve_keyword "$keyword")
+    if [ -n "$auto_mods" ]; then
+        if [ -n "$module" ]; then
+            module="$module,$auto_mods"
+        else
+            module="$auto_mods"
+        fi
+        module=$(echo "$module" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)
+    fi
+
+    local normalized
+    if ! normalized=$(_normalize_modules "$module"); then
+        return 1
+    fi
+    module="$normalized"
+
+    local pom_file="src/modules/pom.xml"
+    _check_pom "$pom_file" || return 1
+
+    _print_header "$module" "$profile" "$also_make"
+
+    cd "$PROJECT_DIR" || return 1
+
+    local mvn_cmd=(mvn clean package -f "$pom_file")
+    [ -n "$module" ] && mvn_cmd+=(-pl "$module")
+    [ -n "$also_make" ] && mvn_cmd+=(-am)
+    [ -n "$profile" ] && mvn_cmd+=(-P "$profile")
+    [ "$skip_tests" = "true" ] && mvn_cmd+=(-DskipTests)
+
+    _exec_build "$module" "$also_make" "${mvn_cmd[@]}"
+}
+
+# @cmd 编译并打包交付（模块jar + 依赖jar 一起打包）
+# @alias p
+# @arg module*                           模块名（支持多个，空格分隔）
+# @option -p --profile <ENV>             构建环境
+# @option -k --keyword <KEY>             按关键字自动扫描相关模块
+# @option -f --filter <KEY>              筛选依赖包关键字
+# @option -d --patch-dir <DIR>           交付目录（默认 patch）
+# @flag  --am                            连带编译依赖模块
+patch() {
+    _setup_env
+    local module
+    module=$(
+        IFS=,
+        echo "${argc_module[*]:-}"
+    )
+    local profile="${argc_profile:-}"
+    local keyword="${argc_keyword:-}"
+    local deps_filter="${argc_filter:-}"
+    local patch_dir="${argc_patch_dir:-patch}"
+    local also_make="${argc_am:-}"
+
+    local auto_mods
+    auto_mods=$(_resolve_keyword "$keyword")
+    if [ -n "$auto_mods" ]; then
+        if [ -n "$module" ]; then
+            module="$module,$auto_mods"
+        else
+            module="$auto_mods"
+        fi
+        module=$(echo "$module" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)
+    fi
+
+    if [ -z "$module" ]; then
+        echo -e "\033[31m[错误] patch 命令至少需要一个模块\033[0m" >&2
+        return 1
+    fi
+
+    case "$patch_dir" in
+    "" | "/" | "." | "..")
+        echo -e "\033[31m[错误] 非法交付目录: $patch_dir\033[0m" >&2
+        return 1
+        ;;
+    esac
+
+    local normalized
+    if ! normalized=$(_normalize_modules "$module"); then
+        return 1
+    fi
+    module="$normalized"
+
+    local pom_file="src/modules/pom.xml"
+    _check_pom "$pom_file" || return 1
+
+    _print_header "$module" "$profile" "$also_make"
+    echo -e "\033[36m 交付目录    : $patch_dir\033[0m"
+    echo -e "\033[36m 依赖筛选    : ${deps_filter:-全部}\033[0m"
+    echo -e "\033[36m========================================\033[0m"
+
+    cd "$PROJECT_DIR" || return 1
+
+    local mvn_cmd=(mvn clean package -f "$pom_file")
+    [ -n "$module" ] && mvn_cmd+=(-pl "$module")
+    [ -n "$also_make" ] && mvn_cmd+=(-am)
+    [ -n "$profile" ] && mvn_cmd+=(-P "$profile")
+    mvn_cmd+=(-DskipTests)
+
+    echo -e "\033[36m[执行] ${mvn_cmd[*]}\033[0m"
+    echo -e "\033[36m----------------------------------------\033[0m"
+    if ! "${mvn_cmd[@]}"; then
+        _build_failed "$also_make" "$module"
+        return 1
+    fi
+
+    echo -e "\n\033[33m[交付] 正在打包到 $patch_dir ...\033[0m"
+    rm -rf -- "$patch_dir"
+    mkdir -p "$patch_dir/modules" "$patch_dir/deps"
+
+    IFS=',' read -ra MODS <<<"$module"
+    for mod in "${MODS[@]}"; do
+        [ -z "$mod" ] && continue
+        find "src/modules/$mod/target" -maxdepth 1 -name "*.jar" \
+            ! -name "*original*" ! -name "*sources*" \
+            -exec cp {} "$patch_dir/modules/" \; 2>/dev/null
+    done
+
+    for mod in "${MODS[@]}"; do
+        [ -z "$mod" ] && continue
+        local deps_dir="src/modules/$mod/target/deps"
+        if [ ! -d "$deps_dir" ] || [ -z "$(ls -A "$deps_dir" 2>/dev/null)" ]; then
+            local dep_cmd
+            dep_cmd=(mvn dependency:copy-dependencies -f "$pom_file" -pl "$mod" -DoutputDirectory="$deps_dir" -q)
+            echo -e "\033[36m[依赖] 提取 $mod 依赖...\033[0m"
+            "${dep_cmd[@]}" || true
+        fi
+
+        if [ -d "$deps_dir" ]; then
+            if [ -n "$deps_filter" ]; then
+                find "$deps_dir" -name "*${deps_filter}*" -exec cp {} "$patch_dir/deps/" \; 2>/dev/null
+            else
+                find "$deps_dir" -name "*.jar" -exec cp {} "$patch_dir/deps/" \; 2>/dev/null
+            fi
+        fi
+    done
+
+    echo -e "\033[32m========================================"
+    echo -e " 🎉 交付包已就绪: $patch_dir/"
+    echo -e "========================================\033[0m"
+    echo -e "\033[33m  模块包:\033[0m"
+    ls -lh "$patch_dir/modules/" 2>/dev/null | grep ".jar" | awk '{print "    📦", $9, "("$5")"}'
+    echo -e "\033[33m  依赖包:\033[0m"
+    ls -lh "$patch_dir/deps/" 2>/dev/null | grep ".jar" | awk '{print "    📦", $9, "("$5")"}'
+
+    local mod_count
+    mod_count=$(ls "$patch_dir/modules/"*.jar 2>/dev/null | wc -l | tr -d ' ')
+    local dep_count
+    dep_count=$(ls "$patch_dir/deps/"*.jar 2>/dev/null | wc -l | tr -d ' ')
+    local total_size
+    total_size=$(du -sh "$patch_dir" 2>/dev/null | awk '{print $1}')
+    echo -e "\n\033[32m  共 ${mod_count} 个模块包 + ${dep_count} 个依赖包，总大小: $total_size\033[0m"
+    echo -e "\033[32m========================================\033[0m"
+}
+
+# @cmd 提取模块的依赖包（不编译）
+# @alias d
+# @arg module!                             模块名（必填，单个）
+# @option -f --filter <KEY>              筛选依赖包关键字
+deps() {
+    _setup_env
+    local module="${argc_module[0]:-}"
+    local deps_filter="${argc_filter:-}"
+
+    local pom_file="src/modules/pom.xml"
+    _check_pom "$pom_file" || return 1
+    cd "$PROJECT_DIR" || return 1
+
+    local deps_dir="src/modules/$module/target/deps"
+    echo -e "\033[33m[拷贝] 正在提取 $module 的依赖包...\033[0m"
+
+    local dep_cmd
+    dep_cmd=(mvn dependency:copy-dependencies -f "$pom_file" -pl "$module" -DoutputDirectory="$deps_dir")
+
+    echo -e "\033[36m[执行] ${dep_cmd[*]}\033[0m"
+    if "${dep_cmd[@]}"; then
+        echo -e "\033[32m[依赖产物] $deps_dir\033[0m"
+        if [ -n "$deps_filter" ]; then
+            echo -e "\033[33m  筛选关键字: $deps_filter\033[0m"
+            find "$deps_dir" -name "*${deps_filter}*" -exec ls -lh {} \; 2>/dev/null | awk '{print " 📦", $9, "("$5")"}'
+        else
+            find "$deps_dir" -name "*.jar" -exec ls -lh {} \; 2>/dev/null | awk '{print " 📦", $9, "("$5")"}'
+        fi
+    else
+        echo -e "\033[31m[错误] 依赖拷贝失败\033[0m"
+        return 1
+    fi
+}
+
+# @cmd 查看帮助和可用模块列表
+help() {
+    _setup_env
+    echo "ARES-OMC 构建工具"
+    echo ""
+    echo "用法: omc-build <命令> [模块...] [选项]"
+    echo ""
+    echo "命令:"
+    echo "  build (b)     编译模块"
+    echo "  patch (p)     编译 + 打包交付（模块jar + 依赖jar）"
+    echo "  deps  (d)     提取模块的依赖包（不编译）"
+    echo "  help          查看本帮助"
+    echo ""
+    echo "示例:"
+    echo "  omc-build b admin                        # 编译单个模块"
+    echo "  omc-build b admin koca-extend base       # 编译多个模块"
+    echo "  omc-build b admin koca-extend --am       # 多个模块 + 连带依赖"
+    echo "  omc-build b -k report                    # 按关键字扫描模块"
+    echo "  omc-build p koca-extend -f koca-report   # 编译 + 打包交付"
+    echo "  omc-build p admin koca-extend -d dist    # 指定交付目录"
+    echo "  omc-build d koca-extend -f koca-report   # 只提取依赖"
+    echo ""
+    echo "可用模块:"
+    if [ -d "$PROJECT_DIR/src/modules" ]; then
+        local pom mod name
+        for pom in "$PROJECT_DIR"/src/modules/*/pom.xml; do
+            [ -f "$pom" ] || continue
+            mod=$(basename "$(dirname "$pom")")
+            name=$(grep -m1 '<name>' "$pom" 2>/dev/null | sed 's/.*<name>\(.*\)<\/name>.*/\1/' | xargs)
+            printf "  \033[33m%-35s\033[0m %s\n" "$mod" "$name"
+        done
+    fi
+}
+
+# ============================================
+# 内部函数
+# ============================================
+
+_find_project_root() {
+    local dir="$1"
+    while :; do
+        if [ -f "$dir/src/modules/pom.xml" ]; then
+            echo "$dir"
+            return 0
+        fi
+        [ "$dir" = "/" ] && break
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+_setup_env() {
+    if ! PROJECT_DIR="$(_find_project_root "$(pwd)")"; then
+        echo -e "\033[31m[错误] 无法定位项目根目录！\033[0m" >&2
+        echo -e "\033[33m请确保在 OMC 项目目录下执行。\033[0m" >&2
+        echo -e "\033[33m项目根目录标志：存在 src/modules/pom.xml\033[0m" >&2
+        exit 1
+    fi
+
+    local default_jdk=""
+    if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+        default_jdk="$JAVA_HOME"
+    elif [ -x "/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home/bin/java" ]; then
+        default_jdk="/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home"
+    elif [ -x "/usr/lib/jvm/java-8-openjdk-amd64/bin/java" ]; then
+        default_jdk="/usr/lib/jvm/java-8-openjdk-amd64"
+    fi
+
+    JDK_HOME="${argc_jdk:-$default_jdk}"
+    if [ -n "$JDK_HOME" ] && [ -x "$JDK_HOME/bin/java" ]; then
+        export JAVA_HOME="$JDK_HOME"
+        export PATH="$JAVA_HOME/bin:$PATH"
+    fi
+}
+
+_check_pom() {
+    if [ ! -f "$PROJECT_DIR/$1" ]; then
+        echo -e "\033[31m[错误] 找不到聚合文件: $PROJECT_DIR/$1\033[0m" >&2
+        return 1
+    fi
+    return 0
+}
+
+_resolve_keyword() {
+    local keyword="$1"
+    [ -z "$keyword" ] && return 0
+
+    echo -e "\033[33m[扫描] 正在寻找包含 '$keyword' 的模块...\033[0m" >&2
+    local auto_mods
+    auto_mods=$(grep -Frl -- "$keyword" "$PROJECT_DIR"/src/modules/*/pom.xml 2>/dev/null |
+        sed -E 's#.*/src/modules/([^/]+)/pom.xml#\1#' |
+        sort -u | paste -sd, -)
+
+    if [ -n "$auto_mods" ]; then
+        echo -e "\033[32m[发现] 找到相关模块: $auto_mods\033[0m" >&2
+        echo "$auto_mods"
+    else
+        echo -e "\033[31m[警告] 未找到包含 '$keyword' 的模块！\033[0m" >&2
+        return 0
+    fi
+}
+
+_load_reactor_modules() {
+    grep -oE '<module>[^<]+</module>' "$PROJECT_DIR/src/modules/pom.xml" 2>/dev/null |
+        sed -E 's#</?module>##g' | tr -d ' \t'
+}
+
+_normalize_modules() {
+    local raw="$1"
+    [ -z "$raw" ] && return 0
+    local reactor
+    reactor=$(_load_reactor_modules)
+    local result="" m match
+    IFS=',' read -ra input_mods <<<"$raw"
+    for m in "${input_mods[@]}"; do
+        [ -z "$m" ] && continue
+        if echo "$reactor" | grep -qx "$m"; then
+            result="${result:+$result,}$m"
+            continue
+        fi
+        match=$(echo "$reactor" | grep -E "(^|-)$m\$" | head -1)
+        if [ -n "$match" ]; then
+            echo -e "\033[33m[映射] $m -> $match\033[0m" >&2
+            result="${result:+$result,}$match"
+            continue
+        fi
+        echo -e "\033[31m[错误] 模块 '$m' 不在 reactor 中\033[0m" >&2
+        echo -e "\033[33m可用模块:\033[0m" >&2
+        echo "$reactor" | sed 's/^/  /' >&2
+        return 1
+    done
+    echo "$result"
+}
+
+# 参数: $1=构建模块  $2=profile  $3=连带编译
+_print_header() {
+    local java_ver="未找到 java"
+    if command -v java >/dev/null 2>&1; then
+        java_ver=$(java -version 2>&1 | head -1)
+    fi
+
+    local mvn_ver="未找到 mvn"
+    if command -v mvn >/dev/null 2>&1; then
+        mvn_ver=$(mvn -version 2>&1 | head -1)
+    fi
+
+    echo -e "\033[36m========================================"
+    echo -e " Java 版本   : $java_ver"
+    echo -e " Maven 版本  : $mvn_ver"
+    echo -e " 项目目录    : $PROJECT_DIR"
+    echo -e " 构建模块    : ${1:-全部}"
+    echo -e " Profile     : ${2:-未指定}"
+    echo -e " 连带编译    : ${3:-false}"
+    echo -e "========================================\033[0m"
+}
+
+_exec_build() {
+    local module="$1"
+    local also_make="$2"
+    shift 2
+
+    echo -e "\033[36m[执行] $*\033[0m"
+    echo -e "\033[36m----------------------------------------\033[0m"
+    if "$@"; then
+        echo -e "\033[32m========================================"
+        echo -e " 🎉 打包成功！"
+        echo -e "========================================\033[0m"
+        if [ -n "$module" ]; then
+            echo -e "\033[33m[模块产物]\033[0m"
+            IFS=',' read -ra MODS <<<"$module"
+            for mod in "${MODS[@]}"; do
+                [ -z "$mod" ] && continue
+                find "$PROJECT_DIR/src/modules/$mod/target" -maxdepth 1 -name "*.jar" \
+                    ! -name "*original*" ! -name "*sources*" \
+                    -exec ls -lh {} \; 2>/dev/null | awk '{print " 📦", $9, "("$5")"}'
+            done
+        fi
+        echo -e "\033[32m========================================\033[0m"
+        return 0
+    else
+        _build_failed "$also_make" "$module"
+        return 1
+    fi
+}
+
+_build_failed() {
+    echo -e "\033[31m========================================"
+    echo -e " ❌ 打包失败，请检查上方错误日志！"
+    echo -e "========================================\033[0m"
+    if [ -z "$1" ] && [ -n "$2" ]; then
+        echo -e "\033[33m💡 提示: 如果报错提示找不到依赖，请尝试加上 --am 参数重新构建。\033[0m"
+    fi
+}
+
+# ============ 入口 ============
+if ! command -v argc >/dev/null 2>&1; then
+    echo "错误: 未找到 argc 命令，请先安装 argc" >&2
+    exit 1
+fi
+eval "$(argc --argc-eval "$0" "$@")"

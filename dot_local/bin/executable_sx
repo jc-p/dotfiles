@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""统一文件和内容搜索；只在用户选择后打开编辑器，不执行搜索结果中的命令。"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+from collections.abc import Generator, Iterable
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+from typing import cast
+
+
+class SearchError(RuntimeError):
+    """可直接展示给用户的依赖、输入和搜索错误。"""
+
+
+class Options(argparse.Namespace):
+    """参数解析边界；子命令各自填写使用到的字段。"""
+
+    command: str | None
+    completions: str | None
+    query: str
+    stdin: bool
+    edit: bool
+    code: bool
+    print: bool
+    no_preview: bool
+    rg_args: list[str]
+
+
+@dataclass(frozen=True)
+class Match:
+    path: str
+    line: int = 0
+    text: str = ""
+
+    def record(self) -> str:
+        # 制表符是选择器字段分隔符；拒绝特殊路径，避免选择后误打开其他文件。
+        if any(char in self.path for char in "\t\r\n"):
+            raise SearchError("路径含制表符或换行，请使用原生 fd/rg 处理该文件")
+        text = self.text.replace("\t", " ").replace("\r", " ").replace("\n", " ").rstrip()
+        return f"{self.path}\t{self.line}\t{text}\n"
+
+
+def require(command: str) -> str:
+    path = shutil.which(command)
+    if path is None:
+        raise SearchError(f"缺少 {command}，请显式运行 dotfiles 的 scripts/bootstrap.sh 安装依赖")
+    return path
+
+
+def stop(process: subprocess.Popen[str]) -> None:
+    """取消选择时只结束本次创建的搜索/选择子进程。"""
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+def json_text(value: object) -> str:
+    if not isinstance(value, dict):
+        raise SearchError("rg 返回了无效的文本字段")
+    field = cast(dict[str, object], value)
+    if isinstance(field.get("text"), str):
+        return cast(str, field["text"])
+    if isinstance(field.get("bytes"), str):
+        return base64.b64decode(cast(str, field["bytes"]), validate=True).decode(errors="surrogateescape")
+    raise SearchError("rg 返回了未知的文本编码")
+
+
+def process_records(command: list[str], *, content: bool) -> Generator[Match, None, None]:
+    """流式读取结果；不把整个项目的匹配内容留在内存中。"""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True, errors="surrogateescape")
+    assert process.stdout is not None
+    try:
+        for line in process.stdout:
+            if not content:
+                yield Match(line.rstrip("\n"))
+                continue
+            message: object = json.loads(line)
+            if not isinstance(message, dict) or message.get("type") != "match":
+                continue
+            data = message.get("data")
+            if not isinstance(data, dict) or not isinstance(data.get("line_number"), int):
+                raise SearchError("rg 返回了无效的匹配记录")
+            yield Match(json_text(data.get("path")), data["line_number"], json_text(data.get("lines")))
+        status = process.wait()
+        if status not in (0, 1) or (status == 1 and not content):
+            raise SearchError(f"{Path(command[0]).name} 搜索失败，退出码 {status}")
+    finally:
+        process.stdout.close()
+        stop(process)
+
+
+def stdin_records() -> Generator[Match, None, None]:
+    for line in sys.stdin:
+        if line.rstrip("\n"):
+            yield Match(line.rstrip("\n"))
+
+
+def select(records: Generator[Match, None, None], *, query: str, preview: bool) -> Match | None:
+    process: subprocess.Popen[str] | None = None
+    try:
+        first = next(records, None)
+        if first is None:
+            print("sx: 没有匹配结果", file=sys.stderr)
+            return None
+        command = [require("fzf"), "--no-multi", "--height=90%", "--layout=reverse", "--border",
+                   "--delimiter=\t", "--with-nth=1,2,3", "--query", query]
+        if preview:
+            runner = f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))}"
+            command += ["--preview", runner + " _preview {1} {2}", "--preview-window=right:60%"]
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   text=True, errors="surrogateescape")
+        assert process.stdin is not None and process.stdout is not None
+        try:
+            process.stdin.write(first.record())
+            for record in records:
+                process.stdin.write(record.record())
+        except BrokenPipeError:
+            pass  # fzf 已取消选择；下面检查其退出码并关闭搜索生成器。
+        try:
+            process.stdin.close()
+        except BrokenPipeError:
+            pass
+        selected = process.stdout.read().rstrip("\n")
+        status = process.wait()
+        if status in (1, 130):
+            return None
+        if status != 0:
+            raise SearchError(f"fzf 选择失败，退出码 {status}")
+        if not selected:
+            return None
+        fields = selected.split("\t", 2)
+        if len(fields) != 3 or not fields[1].isdigit():
+            raise SearchError("选择器返回了无效记录")
+        return Match(fields[0], int(fields[1]), fields[2])
+    finally:
+        records.close()
+        if process is not None:
+            if process.stdin is not None and not process.stdin.closed:
+                try:
+                    process.stdin.close()
+                except BrokenPipeError:
+                    pass
+            stop(process)
+            if process.stdout is not None:
+                process.stdout.close()
+
+
+def open_match(match: Match, *, code: bool) -> int:
+    if code:
+        command = [require("code"), "-g", f"{match.path}:{match.line}"] if match.line else [require("code"), match.path]
+    else:
+        command = shlex.split(os.environ.get("EDITOR", "vim"))
+        if not command:
+            raise SearchError("EDITOR 不能为空")
+        require(command[0])
+        if match.line:
+            command.append(f"+{match.line}")
+        command.append(match.path)
+    # argv 调用保留空格、引号和冒号，不解释文件名或 EDITOR 中的 shell 代码。
+    return subprocess.call(command)
+
+
+def preview_file(path: str, line: int) -> int:
+    start, end = max(1, line - 30), max(200, line + 70)
+    bat = shutil.which("bat")
+    if bat:
+        command = [bat, "--style=numbers", "--color=always", f"--line-range={start}:{end}"]
+        if line:
+            command.append(f"--highlight-line={line}")
+        return subprocess.call([*command, "--", path])
+    with Path(path).open(errors="replace") as stream:
+        for number, text in enumerate(stream, 1):
+            if number > end:
+                break
+            if number >= start:
+                print(f"{number:5} {text}", end="")
+    return 0
+
+
+def completions() -> str:
+    return '''_sx() {
+  local context state state_descr line
+  typeset -A opt_args
+  _arguments -C '--help[查看帮助]' '1:搜索场景:(files grep)' '*::参数:->args'
+  if [[ $state == args ]]; then
+    case $words[1] in
+      files) _arguments '--edit[打开编辑器]' '--code[打开 VS Code]' '--stdin[从标准输入读取路径]' '1:文件查询:' ;;
+      grep) _arguments '--code[打开 VS Code]' '--print[只返回位置]' '--no-preview[关闭预览]' '*:rg 参数:_files' ;;
+    esac
+  fi
+}
+compdef _sx sx
+'''
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description="统一文件和内容搜索，选中后才打开编辑器。",
+                                     epilog="示例：sx files --edit；sx grep 关键词；sx grep --code -- -g '*.ts' 关键词 .")
+    result.add_argument("--completions", choices=["zsh"], help="输出 Zsh 补全脚本")
+    commands = result.add_subparsers(dest="command")
+    files = commands.add_parser("files", help="查找文件，默认返回路径")
+    files.add_argument("query", nargs="?", default="", help="文件名过滤词")
+    files.add_argument("--stdin", action="store_true", help="使用管道传入的路径，兼容 ff 的文件来源")
+    action = files.add_mutually_exclusive_group()
+    action.add_argument("--edit", action="store_true", help="选中后打开 EDITOR")
+    action.add_argument("--code", action="store_true", help="选中后打开 VS Code")
+    grep = commands.add_parser("grep", help="查内容并跳到编辑器；原生 rg 参数放在 -- 后")
+    action = grep.add_mutually_exclusive_group()
+    action.add_argument("--code", action="store_true", help="选中后用 VS Code 跳行")
+    action.add_argument("--print", action="store_true", help="只返回 文件:行号")
+    grep.add_argument("--no-preview", action="store_true", help="不显示预览，兼容 rgv")
+    grep.add_argument("rg_args", nargs=argparse.REMAINDER, help="rg 的关键词、选项和路径；非交互调用建议明确路径")
+    return result
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "_preview":
+        if len(arguments) != 3:
+            raise SearchError("无效的预览参数")
+        return preview_file(arguments[1], int(arguments[2]))
+    command_parser = parser()
+    args = command_parser.parse_args(arguments, namespace=Options())
+    if args.completions:
+        print(completions(), end="")
+        return 0
+    if args.command is None:
+        command_parser.print_help()
+        return 0
+    exclusions = [".git", "node_modules", "dist", "build", "coverage", ".qoder"]
+    if args.command == "files":
+        if args.stdin:
+            records = stdin_records()
+        else:
+            command = [require("fd"), "--type", "f", "--hidden", "--follow"]
+            for excluded in exclusions:
+                command += ["--exclude", excluded]
+            records = process_records(command, content=False)
+        match = select(records, query=args.query, preview=True)
+        if match is None:
+            return 1
+        if args.edit or args.code:
+            return open_match(match, code=args.code)
+        print(match.path)
+        return 0
+    rg_args: list[str] = args.rg_args
+    if rg_args and rg_args[0] == "--":
+        rg_args = rg_args[1:]
+    if not rg_args:
+        command_parser.error("sx grep 需要关键词；示例：sx grep 关键词")
+    # 单个关键词明确搜索当前目录，避免命令替换时误读空 stdin。
+    if len(rg_args) == 1:
+        rg_args += ["."]
+    command = [require("rg"), "--json", "--smart-case", "--hidden"]
+    for excluded in exclusions:
+        command += ["--glob", "!" + excluded]
+    match = select(process_records([*command, *rg_args], content=True), query="", preview=not args.no_preview)
+    if match is None:
+        return 1
+    if args.print:
+        print(f"{match.path}:{match.line}")
+        return 0
+    return open_match(match, code=args.code)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (SearchError, OSError, ValueError) as error:
+        print(f"sx: {error}", file=sys.stderr)
+        raise SystemExit(2)
+    except KeyboardInterrupt:
+        raise SystemExit(130)

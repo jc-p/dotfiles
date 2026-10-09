@@ -43,21 +43,11 @@ fkill() {
 }
 
 fbr() {
-  setopt localoptions pipefail
-  local branch
-  branch=$(git branch -a | sed 's/^[* ] //; s#remotes/origin/##' | grep -v HEAD | sort -u | fzf) || return
-  [[ -n "$branch" ]] && git checkout "$branch"
-}
-
-fshow() {
-  fgl "$@"
+  gx co --all-branches "$@"
 }
 
 fstash() {
-  setopt localoptions pipefail
-  local stash
-  stash=$(git stash list | fzf | cut -d: -f1) || return
-  [[ -n "$stash" ]] && git stash pop "$stash"
+  gx stash "$@"
 }
 
 # ff 返回路径；fe 打开编辑器，保留原有调用契约。
@@ -72,19 +62,9 @@ __pjc_fzf_file_source() {
   fi
 }
 
-__pjc_fzf_preview_cmd() {
-  if command -v bat >/dev/null 2>&1; then
-    print -r -- 'bat --style=numbers --color=always --line-range=:200 {}'
-  else
-    print -r -- "sed -n '1,200p' {}"
-  fi
-}
-
 ff() {
   setopt localoptions pipefail
-  local file
-  file="$(__pjc_fzf_file_source | fzf --preview "$(__pjc_fzf_preview_cmd)" --preview-window='right:60%,border-left')" || return
-  [[ -n "$file" ]] && print -r -- "$file"
+  __pjc_fzf_file_source | sx files --stdin "$@"
 }
 
 fe() {
@@ -102,19 +82,7 @@ fcode() {
 
 # 避免覆盖用于前台作业控制的内置 fg 命令。
 fsearch() {
-  setopt localoptions pipefail
-  local result file line
-  result=$(rg --line-number --no-heading --color=never --smart-case \
-    --glob '!.git' --glob '!node_modules' "$@" \
-    | fzf --height 90% --layout=reverse --border \
-        --delimiter : \
-        --preview 'bat --style=numbers --color=always --highlight-line {2} --line-range=:200 {1} 2>/dev/null || head -n 200 {1}' \
-        --preview-window 'right:60%:+{2}') || return
-  [[ -n "$result" ]] || return
-  file="${result%%:*}"
-  result="${result#*:}"
-  line="${result%%:*}"
-  _dotfiles_edit "+$line" "$file"
+  sx grep -- "$@"
 }
 
 fh() {
@@ -127,21 +95,11 @@ fh() {
 }
 
 fgl() {
-  setopt localoptions pipefail
-  local commit
-  commit=$(git log --oneline --color=always | fzf --ansi --height 90% --layout=reverse \
-    --preview 'git show --color=always {1} | head -n 200' \
-    --preview-window 'right:60%') || return
-  [[ -n "$commit" ]] && git show "${commit%% *}"
+  gx show "$@"
 }
 
 fgd() {
-  setopt localoptions pipefail
-  local file
-  file=$(git diff --name-only | fzf --height 90% --layout=reverse \
-    --preview 'git diff --color=always {} | head -n 200' \
-    --preview-window 'right:60%') || return
-  [[ -n "$file" ]] && _dotfiles_edit "$file"
+  gx diff --edit "$@"
 }
 
 fdir() {
@@ -152,14 +110,7 @@ fdir() {
 }
 
 rgv() {
-  setopt localoptions pipefail
-  local result file line
-  result=$(rg --line-number --no-heading --color=never "$@" | fzf --height 90% --layout=reverse) || return
-  [[ -n "$result" ]] || return
-  file="${result%%:*}"
-  result="${result#*:}"
-  line="${result%%:*}"
-  _dotfiles_edit "+$line" "$file"
+  sx grep --no-preview -- "$@"
 }
 
 replace() {
@@ -168,43 +119,11 @@ replace() {
 }
 
 frg() {
-  setopt localoptions pipefail
-  if [[ $# -eq 0 ]]; then
-    print -u2 'usage: frg <pattern>'
-    return 2
-  fi
-
-  local selected file line preview
-  if command -v bat >/dev/null 2>&1; then
-    preview='bat --style=numbers --color=always --highlight-line {2} --line-range=:240 {1}'
-  else
-    preview="sed -n '1,240p' {1}"
-  fi
-
-  selected="$(rg --line-number --column --no-heading --color=never --smart-case "$@" | fzf --delimiter : --preview "$preview" --preview-window='right:60%,border-left')" || return
-  file="$(print -r -- "$selected" | cut -d: -f1)"
-  line="$(print -r -- "$selected" | cut -d: -f2)"
-  [[ -n "$file" && -n "$line" ]] && _dotfiles_edit "+$line" "$file"
+  sx grep -- "$@"
 }
 
 frcode() {
-  setopt localoptions pipefail
-  if [[ $# -eq 0 ]]; then
-    print -u2 'usage: frcode <pattern>'
-    return 2
-  fi
-
-  local selected file line preview
-  if command -v bat >/dev/null 2>&1; then
-    preview='bat --style=numbers --color=always --highlight-line {2} --line-range=:240 {1}'
-  else
-    preview="sed -n '1,240p' {1}"
-  fi
-
-  selected="$(rg --line-number --column --no-heading --color=never --smart-case "$@" | fzf --delimiter : --preview "$preview" --preview-window='right:60%,border-left')" || return
-  file="$(print -r -- "$selected" | cut -d: -f1)"
-  line="$(print -r -- "$selected" | cut -d: -f2)"
-  [[ -n "$file" && -n "$line" ]] && code -g "$file:$line"
+  sx grep --code -- "$@"
 }
 
 y() {
