@@ -13,6 +13,11 @@ command bash -c '(( BASH_VERSINFO[0] >= 4 ))' || { print -u2 'rx 需要 Bash 4+�
 for tool in gx sx omc-build rx; do
   command "$tool" --help >/dev/null 2>&1 || { print -u2 "$tool 帮助入口失败"; exit 1; }
 done
+for retired in ff fe fcode fsearch rgv frg frcode fbr fgl fgd fstash fshow; do
+  if (( $+functions[$retired] || $+aliases[$retired] )); then
+    print -u2 "旧入口仍存在: $retired，请检查本机覆盖或重新加载配置"; exit 1
+  fi
+done
 
 for tool in node python3 pnpm; do
   actual=$(command "$tool" --version) || exit 1

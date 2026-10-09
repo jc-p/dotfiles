@@ -123,7 +123,7 @@ go() {
 
 # @cmd 切到分支；若该分支在 worktree 中则打开编辑器
 # @arg branch 分支名
-# @flag --all-branches 交互选择本地及远端分支，兼容原 fbr
+# @flag --all-branches 交互选择本地及远端分支
 co() {
   need_repo
   if [[ "${argc_all_branches:-}" == "1" ]]; then
@@ -571,7 +571,7 @@ show() {
 
 # @cmd 选择变更文件并查看差异；可用 --edit 打开编辑器
 # @flag --cached 查看暂存区，默认工作区
-# @flag --edit 打开编辑器，兼容原 fgd
+# @flag --edit 打开编辑器
 diff() {
   need_repo
   have fzf || die "需要 fzf 才能选择变更文件"

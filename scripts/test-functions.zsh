@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 # ps/fzf/kill 使用测试替身；不查看真实进程、不发送信号、不执行历史命令。
 set -eu
-test_source_dir="${0:A:h:h}"
 source "${0:A:h:h}/dot_config/zsh/functions.zsh"
 
 [[ "$(whence -w fg)" == 'fg: builtin' ]]
@@ -32,12 +31,6 @@ fh
 read -r -z queued_command
 [[ "$queued_command" == 'history_executed=true' ]]
 
-EDITOR="/usr/bin/printf '%s\\n'"
-[[ "$(_dotfiles_edit 'space name.txt')" == 'space name.txt' ]]
-FZF_DEFAULT_COMMAND="printf 'space name.txt\\n'"
-sx() { command python3 "$test_source_dir/dot_local/bin/executable_sx" "$@"; }
-export FZF_DEFAULT_OPTS='--filter="space name.txt"'
-[[ "$(ff)" == 'space name.txt' ]]
 alias gc='git commit --verbose'
 alias gst='git status'
 source "${0:A:h:h}/dot_config/zsh/aliases.zsh"
@@ -45,4 +38,4 @@ source "${0:A:h:h}/dot_config/zsh/aliases.zsh"
 [[ "${aliases[gst]}" == 'git status' ]]
 [[ "${aliases[gl]}" == 'git pull' ]]
 [[ "${aliases[gca]}" == 'git commit --verbose --all' ]]
-print 'Zsh 行为检查通过：fg、多选 PID、取消、历史填入、EDITOR、ff、固定 Git 缩写'
+print 'Zsh 行为检查通过：fg、多选 PID、取消、历史填入、固定 Git 缩写'

@@ -72,7 +72,7 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), name)
 
-    def test_files_stdin_keeps_existing_ff_contract(self) -> None:
+    def test_files_stdin_accepts_candidate_paths(self) -> None:
         result = self.run_tool("sx", "files", "--stdin", input_text="fixture space.txt\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "fixture space.txt\n")
@@ -164,28 +164,26 @@ class ToolTests(unittest.TestCase):
             syntax = self.run_tool("zsh", "-n", input_text=result.stdout)
             self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
-    def test_legacy_names_forward_to_one_implementation(self) -> None:
-        # 用函数替身观察 argv，不切分支、不恢复 stash、不启动编辑器。
+    def test_retired_names_disappear_on_reload(self) -> None:
+        # 模拟旧会话和插件已有定义，重载后不能残留重复入口。
         script = '''
+retired=(ff fe fcode fsearch rgv frg frcode fbr fgl fgd fstash fshow _dotfiles_edit __pjc_fzf_file_source)
+for name in $retired; do
+  functions[$name]='return 0'
+  aliases[$name]='true'
+done
 source "$1"
-gx() { print -r -- "gx:${(j:|:)@}"; }
-sx() { print -r -- "sx:${(j:|:)@}"; }
-fbr
-fgl
-fgd
-fstash
-fsearch 'space pattern' 'file:name.txt'
-frg -g '*.ts' needle .
-rgv needle
-frcode needle
+for name in $retired; do
+  (( ! $+functions[$name] && ! $+aliases[$name] )) || exit 1
+done
+for name in mkcd fcd fdir fh fkill replace y pip pip3; do
+  (( $+functions[$name] )) || exit 1
+done
+print RETIRED_ENTRIES_REMOVED
 '''
         result = self.run_tool("zsh", "-f", "-c", script, "fixture", str(REPOSITORY / "dot_config/zsh/functions.zsh"))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), [
-            "gx:co|--all-branches", "gx:show", "gx:diff|--edit", "gx:stash",
-            "sx:grep|--|space pattern|file:name.txt", "sx:grep|--|-g|*.ts|needle|.",
-            "sx:grep|--no-preview|--|needle", "sx:grep|--code|--|needle",
-        ])
+        self.assertEqual(result.stdout.strip(), "RETIRED_ENTRIES_REMOVED")
 
     @unittest.skipUnless(shutil.which("chezmoi"), "chezmoi 未安装")
     def test_chezmoi_deploys_executable_tools_only(self) -> None:

@@ -1,11 +1,15 @@
 # 通用交互函数；本机覆盖放在 local.zsh。
 
-# EDITOR 支持命令及参数，按 shell 单词拆分，但不执行字符串中的代码。
-_dotfiles_edit() {
-  local -a editor
-  editor=("${(@Q)${(z)${EDITOR:-vim}}}")
-  command "${editor[@]}" "$@"
-}
+# 重载时也清退旧入口；文件/内容搜索使用 sx，Git 交互使用 gx。
+for retired_function in ff fe fcode fsearch rgv frg frcode fbr fgl fgd fstash fshow _dotfiles_edit __pjc_fzf_file_source; do
+  if (( $+functions[$retired_function] )); then
+    unfunction "$retired_function"
+  fi
+  if (( $+aliases[$retired_function] )); then
+    unalias "$retired_function"
+  fi
+done
+unset retired_function
 
 mkcd() {
   [[ $# -eq 1 ]] || { print -u2 '用法: mkcd <目录>'; return 2; }
@@ -42,49 +46,6 @@ fkill() {
   kill -s "$signal" -- "${pids[@]}"
 }
 
-fbr() {
-  gx co --all-branches "$@"
-}
-
-fstash() {
-  gx stash "$@"
-}
-
-# ff 返回路径；fe 打开编辑器，保留原有调用契约。
-__pjc_fzf_file_source() {
-  if [[ -n "${FZF_DEFAULT_COMMAND:-}" ]]; then
-    eval "$FZF_DEFAULT_COMMAND"
-  elif command -v rg >/dev/null 2>&1; then
-    rg --files --hidden --follow -g '!.git' -g '!node_modules' -g '!dist' -g '!build' -g '!coverage' -g '!.qoder'
-  else
-    print -u2 'fzf file source requires fd or rg'
-    return 1
-  fi
-}
-
-ff() {
-  setopt localoptions pipefail
-  __pjc_fzf_file_source | sx files --stdin "$@"
-}
-
-fe() {
-  local file
-  file="$(ff)" || return
-  [[ -n "$file" ]] && _dotfiles_edit "$file"
-}
-
-fcode() {
-  local file
-  file="$(ff)" || return
-  [[ -n "$file" ]] && code "$file"
-}
-
-
-# 避免覆盖用于前台作业控制的内置 fg 命令。
-fsearch() {
-  sx grep -- "$@"
-}
-
 fh() {
   setopt localoptions pipefail
   local selected_command
@@ -94,14 +55,6 @@ fh() {
   print -z -- "$selected_command"
 }
 
-fgl() {
-  gx show "$@"
-}
-
-fgd() {
-  gx diff --edit "$@"
-}
-
 fdir() {
   setopt localoptions pipefail
   local dir
@@ -109,21 +62,9 @@ fdir() {
   [[ -n "$dir" ]] && cd -- "$dir"
 }
 
-rgv() {
-  sx grep --no-preview -- "$@"
-}
-
 replace() {
   # 标准库实现字面替换、差异预览和单文件原子写入，不依赖 BSD/GNU sed。
   command python3 "$HOME/.config/zsh/replace.py" "$@"
-}
-
-frg() {
-  sx grep -- "$@"
-}
-
-frcode() {
-  sx grep --code -- "$@"
 }
 
 y() {

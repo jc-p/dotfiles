@@ -70,6 +70,31 @@ macOS 自带 curl/grep/sed 保留，tree 使用 eza。确有 GNU 行为要求时
 
 `check.sh` 验证配置、安装器失败中止、无 OMZ 的 Git 缩写和独立目标应用；`verify.zsh` 必须以 `zsh -li` 运行，验证实际核心命令、运行时版本、Git 身份存在性、SSH 解析和待同步状态，不安装软件、不连接 SSH。
 
-人工验收：终端字体与显示、Ctrl-R/Ctrl-T、自动建议与语法高亮、ff 返回路径、z 跳目录、Vim 空格+c，以及一个代表性项目的开发命令。字体存在不等于终端已选中它，Git 身份存在不等于值填写正确，最后两项需人工确认。
+人工验收：终端字体与显示、Ctrl-R/Ctrl-T、自动建议与语法高亮、sx 文件选择与内容跳行、gx 差异预览、z 跳目录、Vim 空格+c，以及一个代表性项目的开发命令。字体存在不等于终端已选中它，Git 身份存在不等于值填写正确，最后两项需人工确认。
+
+## 工具迁移边界
+
+- 源码：四个工具在 `dot_local/bin/executable_*`，chezmoi 应用为 `~/.local/bin/gx`、`sx`、`omc-build`、`rx`，无需复制旧机器的 bin 全集。
+- 依赖：按前面的 `bootstrap.sh` 显式安装 Brewfile 和 mise 选定版本，再运行 `check.sh`；不复制 Homebrew keg、mise 安装目录或旧 symlink。
+- Shell：新 Mac 按第 2、3 步准备本机文件并应用配置，让 `~/.local/bin`、Python shims 和补全生效；应用后打开新的登录 Shell，再运行 `verify.zsh`。
+- 私有内容：筛选后私下恢复 `~/.config/rx/config.toml`、SSH 主机和密钥、Git 身份。它们不在公开仓库里，克隆不能恢复登录授权。
+- 工作环境：`omc-build` 的 Java/Maven 按项目在本机选择；工具脚本恢复不等于项目已能编译。ARM 安装、真实项目构建与远端连接仍需新机实际验证。
+- 入口：文件/内容搜索只使用 `sx`，Git 交互只使用 `gx`，不恢复旧兼容函数。
+
+## 已有 Mac 更新工具
+
+已有 chezmoi 源码时不用重新 init。先拉取，再预览并只应用工具和两个关联模块，避免覆盖其他本机配置差异。依赖清单有新增且本机缺失时，另行显式运行 `bootstrap.sh`。
+
+```bash
+dotfiles_source="$(chezmoi source-path)"
+git -C "$dotfiles_source" pull --ff-only
+mkdir -p "$HOME/.local/bin"
+chezmoi diff ~/.local/bin/gx ~/.local/bin/sx ~/.local/bin/omc-build ~/.local/bin/rx \
+  ~/.config/zsh/functions.zsh ~/.config/zsh/tools.zsh
+chezmoi apply ~/.local/bin/gx ~/.local/bin/sx ~/.local/bin/omc-build ~/.local/bin/rx \
+  ~/.config/zsh/functions.zsh ~/.config/zsh/tools.zsh
+```
+
+然后打开新终端；旧入口也会在 `szsh` 重载时清退。输入 `gx --help`、`sx --help`、`omc-build --help`、`rx --help` 验证安装，Tab 补全依赖已有的 Zsh 补全系统。上述定向应用不包含 Starship 等其他配置。
 
 恢复 README 的备份可回退已存在文件；首次应用新建的目标逐项核对。安装脚本与新 Mac 的完整网络安装尚未实机验证，替身测试不能替代平台安装验证。

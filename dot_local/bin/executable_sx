@@ -213,7 +213,7 @@ def parser() -> argparse.ArgumentParser:
     commands = result.add_subparsers(dest="command")
     files = commands.add_parser("files", help="查找文件，默认返回路径")
     files.add_argument("query", nargs="?", default="", help="文件名过滤词")
-    files.add_argument("--stdin", action="store_true", help="使用管道传入的路径，兼容 ff 的文件来源")
+    files.add_argument("--stdin", action="store_true", help="使用管道传入的候选路径")
     action = files.add_mutually_exclusive_group()
     action.add_argument("--edit", action="store_true", help="选中后打开 EDITOR")
     action.add_argument("--code", action="store_true", help="选中后打开 VS Code")
@@ -221,7 +221,7 @@ def parser() -> argparse.ArgumentParser:
     action = grep.add_mutually_exclusive_group()
     action.add_argument("--code", action="store_true", help="选中后用 VS Code 跳行")
     action.add_argument("--print", action="store_true", help="只返回 文件:行号")
-    grep.add_argument("--no-preview", action="store_true", help="不显示预览，兼容 rgv")
+    grep.add_argument("--no-preview", action="store_true", help="不显示预览")
     grep.add_argument("rg_args", nargs=argparse.REMAINDER, help="rg 的关键词、选项和路径；非交互调用建议明确路径")
     return result
 

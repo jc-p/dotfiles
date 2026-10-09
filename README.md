@@ -106,7 +106,7 @@ zsh -li "$dotfiles_source/scripts/verify.zsh"
 
 mise 的 `auto_install` 已关闭。通用默认工具为 Node 24、Python 3.12、pnpm 10；Rust、Java、Maven 按工作需要显式选择。本机版本放在 `99-machine.local.toml`，项目精确版本放入项目 `mise.toml`。启动末尾使用原生 `mise activate zsh --shims` 避免 Homebrew Node/pyenv 抢占选择；项目环境变量用 `mise exec -- 命令` 显式加载。新机重新安装，不能复制本机的 symlink 或安装目录。`replace` 需要 Python 3 和 rg。
 
-通用配置合入了现有 Starship 外观、Vim 快捷键及插件声明。`ff` 保留返回路径的行为，`fe` 打开编辑器，`fcode` 打开 VS Code；原有 `frg`、`frcode`、`y`、`pip` 等入口保留。搜索入口转调 `sx`，Git 交互入口转调 `gx`，不再分别维护实现。
+通用配置合入了现有 Starship 外观、Vim 快捷键及插件声明。文件与内容搜索统一使用 `sx`，Git 交互统一使用 `gx`；旧兼容函数已删除，不再维护平行入口。`cls`、`szsh`、`gl` 等已确认的习惯保留。
 
 ## 工具维护
 
@@ -117,6 +117,8 @@ mise 的 `auto_install` 已关闭。通用默认工具为 Node 24、Python 3.12�
 - 修改后先做对应工具检查，预览目标差异，再应用；提交和推送独立处理。
 - 已初始化 Zsh 补全系统时自动注册四个工具补全，可用 Tab 发现子命令；不额外执行 compinit，也不在启动时安装软件。
 - `gx log` 保持原有哈希输出；展示提交用 `gx show`。现有 `cls`、`szsh`、`gl` 等习惯保留。
+
+新 Mac 按 [迁移步骤](docs/mac-migration.md) 重新安装依赖，再应用工具源码；不复制旧机器的安装目录。已有 Mac 只更新工具的命令见该文档的“已有 Mac 更新工具”。`~/.config/rx/config.toml`、SSH 配置/密钥和工作 JDK/Maven 选择由各机器私下恢复。
 
 Vim 缺少 vim-plug 时只加载基础配置。保留 everforest、airline、NERDCommenter，补充搜索和 surround，共 9 个插件，全部固定 commit。需要插件时显式安装 vim-plug，再进入 Vim 执行 `:PlugInstall`；注册插件后才加载快照。启动时不会下载插件。
 
