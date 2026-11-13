@@ -21,3 +21,8 @@ Brewfile.optional
 .config/mise/conf.d/*.local.toml
 .config/cheat/cheatsheets/local/**
 .vimrc.local
+
+# Yazi 书签包含本机路径；插件和主题通过 ya pkg install 显式恢复。
+.config/yazi/bookmark
+.config/yazi/plugins/**
+.config/yazi/flavors/**

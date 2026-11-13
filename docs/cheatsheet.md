@@ -191,6 +191,28 @@ delta 自动增强 Git 的差异显示，默认上下对比、新旧行号和 `+
 | 看文件（bat） | `cat 文件` |
 | 看文件（原始） | `\cat 文件`（转义别名） |
 
+## Yazi
+
+通用配置包含 Tokyo Night、yamb 书签快捷键、SevenZip 压缩包预览和 Glow Markdown 预览。插件与主题版本由 `package.toml` 固定，书签内容保留在各机器本地。`smart-filter`、`jump-to-char`、`rsync` 只保留包声明，尚未绑定快捷键。
+
+首次在其他 Mac 恢复时，先备份已有的 `~/.config/yazi`，再显式安装依赖和应用配置；这些操作会下载软件及插件，不在启动 Shell 或 Yazi 时自动执行：
+
+```sh
+brew install yazi sevenzip glow
+git -C "$(chezmoi source-path)" pull --ff-only
+chezmoi diff ~/.config/yazi
+chezmoi apply ~/.config/yazi
+ya pkg install
+```
+
+已有机器更新时，拉取源码、预览并应用 Yazi 配置，然后运行 `ya pkg install` 补齐清单中的包。`ya pkg upgrade` 会更新锁定版本，仅在明确升级时运行；应用配置不会删除各机器已有的非托管插件。
+
+- `z`：通过 fzf 查找当前目录树中的文件或目录；`Z`：通过 zoxide 跳转历史目录（需要已安装 fzf、zoxide）。
+- `u` → `a`：收藏当前选中的文件或目录；`u` → `g`：按书签键跳转。
+- `u` → `G`：通过 fzf 搜索书签；`u` → `d`：删除书签。
+- Markdown 使用 Glow 深色渲染，通过标准输入传入文件内容，避免本机 Glow 3.0 在管道输出时使用文件参数只输出空行；压缩包使用内置 `archive` 预览器和 `7zz`。
+- 修改通用配置后，用 `chezmoi re-add` 指定对应配置文件；不要递归添加整个 Yazi 目录，避免带入本机数据和下载的包。
+
 ## macOS 杂项
 
 | 场景 | 命令 |

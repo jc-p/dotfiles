@@ -1,0 +1,19 @@
+[[mgr.prepend_keymap]]
+on = [ "u", "a" ]
+run = "plugin yamb -- save"
+desc = "添加书签"
+
+[[mgr.prepend_keymap]]
+on = [ "u", "g" ]
+run = "plugin yamb -- jump_by_key"
+desc = "按快捷键跳转书签"
+
+[[mgr.prepend_keymap]]
+on = [ "u", "G" ]
+run = "plugin yamb -- jump_by_fzf"
+desc = "搜索并跳转书签"
+
+[[mgr.prepend_keymap]]
+on = [ "u", "d" ]
+run = "plugin yamb -- delete_by_key"
+desc = "删除书签"

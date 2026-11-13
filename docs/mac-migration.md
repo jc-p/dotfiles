@@ -54,7 +54,7 @@ Git 四个核心缩写、rg 搜索规则、fzf、zoxide、提示符和 Vim 配�
 
 Java/Maven 的本机选择示例是 `examples/99-work.local.toml.example`。核对目标 Mac 架构、项目要求和完整版本后，将需要的配置合入本机 `conf.d/*.local.toml`，再显式运行 `mise install`。当前示例选择 Java 8 / Maven 3.6.3；ARM 安装与项目构建尚未验证。不要沿用旧机器 JAVA_HOME/MAVEN_HOME 的绝对路径。
 
-Codex、Claude、Pi、markitdown、cht.sh 等额外命令不属于默认核心安装。只安装选定入口；个人脚本、skills、MCP 配置要另行筛选，凭据重新授权。主用 IDE、终端、容器和文件管理器的配置尚未纳入同步，不能假定仅安装程序就能恢复其快捷键。
+Codex、Claude、Pi、markitdown、cht.sh 等额外命令不属于默认核心安装。只安装选定入口；个人脚本、skills、MCP 配置要另行筛选，凭据重新授权。Yazi 的通用配置与包清单已纳管，依赖和包仍需按[命令速查](cheatsheet.md#yazi)显式安装；书签留在各机器本地。其他 IDE、终端、容器和文件管理器的配置尚未纳入同步，不能假定仅安装程序就能恢复其快捷键。
 
 `Brewfile.optional` 只安装实际需要的条目；执行 `--optional` 会安装该文件全部内容，先删减再运行。`nv` 需要 Neovim，`y` 需要 yazi；不要为已经不用的入口安装依赖。
 

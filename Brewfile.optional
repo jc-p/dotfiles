@@ -4,6 +4,8 @@ brew "gh"
 brew "tmux"
 brew "neovim"  # 使用 nv 时启用；其配置需另行筛选。
 brew "yazi"  # 使用 y 时启用。
+brew "sevenzip"  # Yazi 内置压缩包预览和解压。
+brew "glow"  # Yazi 通过 Piper 渲染 Markdown。
 brew "subversion"  # 工作项目使用 SVN 时启用。
 brew "git-lfs"  # 项目使用 LFS 时启用，并在本机配置过滤器。
 brew "tldr"

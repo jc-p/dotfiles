@@ -1,0 +1,8 @@
+[mgr]
+sort_by = "mtime"
+linemode = "size"
+
+[[plugin.prepend_previewers]]
+url = "*.md"
+# Glow 3.0 在本机非 TTY 输出时，使用标准输入可避免文件参数模式输出空行。
+run = 'piper -- CLICOLOR_FORCE=1 glow -w "$w" -s dark - < "$1"'

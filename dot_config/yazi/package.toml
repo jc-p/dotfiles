@@ -1,0 +1,34 @@
+[[plugin.deps]]
+use = "h-hg/yamb"
+rev = "971b858"
+hash = "da4534745930e827a44d4585bbd965eb"
+
+[[plugin.deps]]
+use = "yazi-rs/plugins:smart-filter"
+rev = "1ef5fe0"
+hash = "d6f7351ea25a43c9b5f4315fa1e23935"
+
+[[plugin.deps]]
+use = "yazi-rs/plugins:jump-to-char"
+rev = "1ef5fe0"
+hash = "7a4b4237223aaa94e589d1c01a23542a"
+
+[[plugin.deps]]
+use = "GianniBYoung/rsync"
+rev = "b5c657a"
+hash = "72828957273094ed0ef52792e3290900"
+
+[[plugin.deps]]
+use = "yazi-rs/plugins:piper"
+rev = "1ef5fe0"
+hash = "d1e0499cae5f3aeb628c267616d4b682"
+
+[[flavor.deps]]
+use = "Mintass/rose-pine"
+rev = "d91f8f2"
+hash = "87da3630653b6d272e43658418599188"
+
+[[flavor.deps]]
+use = "BennyOe/tokyo-night"
+rev = "8e6296f"
+hash = "d9da921c3bd37ba32ee27a8a7a40461f"

@@ -6,7 +6,7 @@
 
 ## 配置边界
 
-- 通用：Zsh 模块、rg 搜索规则、Starship、Git 默认行为、Vim、SSH 通用参数、mise 默认版本，以及 `gx`、`sx`、`omc-build`、`rx` 源码。
+- 通用：Zsh 模块、rg 搜索规则、Starship、Git 默认行为、Vim、Yazi 配置与包清单、SSH 通用参数、mise 默认版本，以及 `gx`、`sx`、`omc-build`、`rx` 源码。
 - 本机：工作目录、代理、私有服务、Git 身份和凭据助手、SSH 主机及密钥路径、机器工具版本。
 - `.gitignore` 排除本机源码文件，`.chezmoiignore` 按目标路径排除本机配置和仓库文档、示例、脚本；SSH 只管理通用 `config`。
 - `private_` 只设置文件权限，不加密；本仓库公开，不上传本机配置、凭据或密钥。
@@ -41,7 +41,7 @@ backup_dir="$HOME/.local/state/dotfiles/backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$backup_dir"
 chmod 700 "$backup_dir"
 for item in .zshrc .ripgreprc .gitconfig .gitignore_global .vimrc .vim/plug-snapshot.vim \
-  .hushlogin .ssh/config .config/zsh .config/starship.toml .config/mise; do
+  .hushlogin .ssh/config .config/zsh .config/starship.toml .config/mise .config/yazi; do
   if [ -e "$HOME/$item" ] || [ -L "$HOME/$item" ]; then
     mkdir -p "$backup_dir/$(dirname "$item")"
     cp -Rp "$HOME/$item" "$backup_dir/$item"

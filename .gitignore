@@ -15,3 +15,8 @@ private_dot_ssh/*config.local
 .DS_Store
 __pycache__/
 /dot_config/cheat/cheatsheets/local/
+
+# Yazi 只同步配置和依赖清单，运行数据及下载的包留在本机。
+/dot_config/yazi/bookmark
+/dot_config/yazi/plugins/
+/dot_config/yazi/flavors/
