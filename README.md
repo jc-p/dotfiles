@@ -122,12 +122,14 @@ mise 的 `auto_install` 已关闭。通用默认工具为 Node 24、Python 3.12�
 
 新 Mac 按 [迁移步骤](docs/mac-migration.md) 重新安装依赖，再应用工具源码；不复制旧机器的安装目录。已有 Mac 只更新工具的命令见该文档的“已有 Mac 更新工具”。`~/.config/rx/config.toml`、SSH 配置/密钥和工作 JDK/Maven 选择由各机器私下恢复。
 
-Vim 缺少 vim-plug 时只加载基础配置。保留 everforest、airline、NERDCommenter，补充搜索和 surround，共 9 个插件，全部固定 commit。需要插件时显式安装 vim-plug，再进入 Vim 执行 `:PlugInstall`；注册插件后才加载快照。启动时不会下载插件。
+Vim 默认显示绝对行号，使用内置 Habamax 深色主题；缺少 vim-plug 时仍可加载基础配置。可选插件包括 everforest、airline、NERDCommenter、fzf 搜索和 surround，共 9 个插件，全部固定 commit。需要插件时显式安装 vim-plug，再进入 Vim 执行 `:PlugInstall`；注册插件后才加载快照。启动时不会下载插件。只安装搜索插件可执行 `:PlugInstall fzf fzf.vim`，之后用 `空格+f` 搜索文件名、`空格+g` 搜索项目内容、`空格+b` 搜索已打开的缓冲区。
 
 ```bash
 curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
   https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
 ```
+
+Git 克隆不可用时，可从 GitHub 官方归档下载 `dot_vim/plug-snapshot.vim` 中对应 commit，将 `fzf` 和 `fzf.vim` 分别安装到 `~/.vim/pack/search/start/fzf` 与 `~/.vim/pack/search/start/fzf.vim`，由 Vim 原生包机制加载。原生包与 vim-plug 安装方式二选一，避免重复加载；`:PlugUpdate` 仅管理通过 Git 安装的插件，原生包需替换为所需版本的官方归档。
 
 ## 日常同步与恢复
 

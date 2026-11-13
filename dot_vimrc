@@ -68,7 +68,7 @@ set mouse=a                         " 全模式鼠标支持
 set autoread                        " 外部修改自动重载
 
 " ▶ 文本呈现
-set number relativenumber           " 混合行号
+set number norelativenumber         " 默认显示每行的实际行号
 set cursorline                      " 高亮当前行
 set scrolloff=5                     " 垂直滚动边距
 set wrap linebreak                  " 智能换行
@@ -116,6 +116,16 @@ nnoremap n nzzzv                    " 结果居中+视觉保持
 nnoremap N Nzzzv
 
 " » 插件快捷键
+" 搜索窗口沿用编辑器配色，避免终端默认强调色过亮。
+let g:fzf_colors = {
+      \ 'fg': ['fg', 'Normal'],
+      \ 'bg': ['bg', 'Normal'],
+      \ 'fg+': ['fg', 'PmenuSel'],
+      \ 'bg+': ['bg', 'PmenuSel'],
+      \ 'hl': ['fg', 'Identifier'],
+      \ 'hl+': ['fg', 'Identifier'],
+      \ 'border': ['fg', 'LineNr'],
+      \ 'prompt': ['fg', 'Identifier'] }
 " 快捷搜索 fzf
 nnoremap <Leader>f :Files<CR>
 " 缓冲区切换
