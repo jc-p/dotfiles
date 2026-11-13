@@ -39,5 +39,6 @@
 
 - Vim 启动不下载插件；缺少 vim-plug 时按照 README 显式安装。
 - 快照赋值错误不再静默忽略；确认快照插件名与 `Plug` 声明一致。
-- 保留的主题为 everforest、状态栏为 airline、注释为 NERDCommenter；`空格+c` 调用注释切换，失配的 Coc 映射已移除。
+- 默认使用 Vim 自带的 Habamax 深色主题，无需安装主题插件；旧版 Vim 缺少 Habamax 时使用默认语法配色，并保留柔和的行号和深灰蓝补全菜单。airline 使用 `dark` 主题；`空格+c` 通过 NERDCommenter 切换注释。
+- 更新配置后重新打开 Vim，或执行 `:Reload`；用 `:colorscheme` 查看当前主题。
 - 回退时恢复 README 中的本机备份；应用新建的文件需要另外核对。

@@ -21,20 +21,42 @@ endif
 "  [2] 主题与视觉呈现
 " ======================
 set termguicolors           " 启用真彩色
-if !empty(globpath(&runtimepath, "colors/everforest.vim"))
-  colorscheme everforest
-endif         " 主色彩方案
-set background=dark         " 暗色模式
+set background=dark
+set t_Co=256                " 在加载主题前启用 256 色回退
+
+" Habamax 随新版 Vim 提供；旧版缺失时仍应用相同的界面配色。
+" 同时设置真彩色与 256 色，避免终端回退后出现亮紫补全菜单。
+function! s:ApplyThemeHighlights() abort
+  highlight Normal guifg=#c7c7c7 guibg=#1c1c1c ctermfg=251 ctermbg=234
+  highlight Comment guifg=#9099a8 ctermfg=246 gui=NONE cterm=NONE
+  highlight LineNr guifg=#65707e guibg=NONE ctermfg=243 ctermbg=NONE
+  highlight CursorLineNr guifg=#c7c7c7 guibg=NONE ctermfg=251 ctermbg=NONE gui=NONE cterm=NONE
+  highlight CursorLine guibg=#262626 ctermbg=235 gui=NONE cterm=NONE
+  highlight Pmenu guifg=#c7c7c7 guibg=#282e38 ctermfg=251 ctermbg=236 gui=NONE cterm=NONE
+  highlight PmenuSel guifg=#eeeeee guibg=#3b4b5e ctermfg=255 ctermbg=239 gui=NONE cterm=NONE
+  highlight PmenuSbar guibg=#282e38 ctermbg=236
+  highlight PmenuThumb guibg=#65707e ctermbg=243
+  highlight MatchParen guifg=#87afaf guibg=#3a3a3a ctermfg=109 ctermbg=237 gui=bold cterm=bold
+endfunction
+
+augroup VimTheme
+  autocmd!
+  autocmd ColorScheme habamax,default call <SID>ApplyThemeHighlights()
+augroup END
+if !empty(globpath(&runtimepath, 'colors/habamax.vim'))
+  colorscheme habamax
+else
+  colorscheme default
+endif
 
 " » 状态栏定制
 let g:airline#extensions#tabline#enabled = 1
 let g:airline#extensions#tabline#formatter = 'unique_tail'
-let g:airline_theme = 'bubblegum'       " 状态栏主题同步
+let g:airline_theme = 'dark'          " 状态栏使用低饱和深色
 let g:airline_powerline_fonts = 1     " 启用 Powerline 符号
 
 " » 语法高亮增强
 syntax enable
-highlight Normal guibg=#1a1a1a       " 自定义背景色
 
 
 "  [3] 编辑器核心行为
@@ -116,7 +138,6 @@ nnoremap <silent> `A `Azz    " 跳转标记后居中
 
 " 高亮当前行/列
 set cursorline
-highlight CursorLine cterm=NONE ctermbg=235 guibg=#2c2d2e
 
 " 自动清理无效标记
 autocmd BufReadPost * silent! delmarks!
@@ -165,7 +186,6 @@ set wildignorecase
 set wildignore=*.o,*.obj,*.pyc,*.class,*.dll,*.exe
 
 " ▶ 终端优化
-set t_Co=256
 set t_ut=
 set ttyfast
 
@@ -180,15 +200,10 @@ set foldlevelstart=99
 set foldnestmax=3
 nnoremap <Leader>z za
 
-" ▶ 错误提示
-highlight Error guifg=#ff5555 ctermfg=Red
-highlight WarningMsg guifg=#ffb86c ctermfg=Yellow
-
 " ▶ 其他增强
 set guicursor=a:blinkon0           " 禁用光标闪烁
 set formatoptions+=mM              " 中文排版
 set splitbelow splitright          " 自然窗口分割
-highlight CursorLine cterm=NONE ctermbg=235 guibg=#2c2d2e
 
 " 本机覆盖最后加载。
 if filereadable(expand("~/.vimrc.local"))
